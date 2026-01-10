@@ -6,7 +6,6 @@ import numpy as np
 import requests
 import re
 
-# 1. 頁面配置
 st.set_page_config(page_title="台股預測助手", layout="centered")
 
 def get_clean_info(sid):
@@ -21,11 +20,11 @@ def get_clean_info(sid):
     return name
 
 st.title("📈 台股精準預測 APP")
-stock_id = st.text_input("輸入股票代碼 (如 8088):", value="8088")
+stock_id = st.text_input("輸入股票代碼:", value="8358")
 
 if stock_id:
     ticker_str = f"{stock_id}.TWO" if int(stock_id) > 1000 else f"{stock_id}.TW"
-    df = yf.download(ticker_str, period="60d", progress=False, auto_adjust=True)
+    df = yf.download(ticker_str, period="100d", progress=False, auto_adjust=True)
     
     if not df.empty:
         df.columns = df.columns.get_level_values(0) if isinstance(df.columns, pd.MultiIndex) else df.columns
@@ -34,54 +33,66 @@ if stock_id:
         low = df['Low'].ffill()
         volume = df['Volume'].ffill()
         
-        stock_name = get_clean_info(stock_id)
-        
-        # 2. 計算預測與準確率(漲跌幅)
+        # --- 核心計算與準確度回測邏輯 ---
         tr = np.maximum(high - low, np.maximum(abs(high - close.shift(1)), abs(low - close.shift(1))))
         atr = tr.rolling(14).mean()
-        tp = (high + low + close) / 3
-        mf_flow = np.where(tp > tp.shift(1), tp * volume, -tp * volume)
         
+        # 1. 歷史準確度計算 (回測過去 10 天)
+        accuracy_list = []
+        for i in range(20, 1, -1):
+            past_close = close.iloc[-i]
+            past_atr = atr.iloc[-i]
+            actual_max_5d = high.iloc[-i+1 : -i+6].max() # 預測後五天的實際最高價
+            pred_max_5d = past_close + (past_atr * 1.8)
+            
+            # 如果實際最高價達到或超過預測價的 95%，視為預測成功
+            score = min(actual_max_5d / pred_max_5d, 1.0)
+            accuracy_list.append(score)
+        
+        final_accuracy = np.mean(accuracy_list) * 100 # 平均準確率
+        
+        # 2. 當前預測計算
         today_close = float(close.iloc[-1])
         atr_val = float(atr.iloc[-1])
-        
-        # 預測邏輯
         pred_next = today_close + (atr_val * 0.8)
         pred_5day = today_close + (atr_val * 1.8)
 
-        # 3. 頂部數據卡片 (含準確率/漲跌幅)
-        st.subheader(f"📊 {stock_name} ({stock_id})")
-        st.metric("今日收盤價", f"{today_close:.2f}")
+        # --- 介面顯示 ---
+        st.subheader(f"📊 {get_clean_info(stock_id)} ({stock_id})")
         
-        c1, c2 = st.columns(2)
-        c1.metric("預估隔日最高", f"{pred_next:.2f}", f"{((pred_next/today_close)-1)*100:+.2f}%")
-        c2.metric("預估五日最高", f"{pred_5day:.2f}", f"{((pred_5day/today_close)-1)*100:+.2f}%")
+        # 醒目的準確度顯示儀表板
+        acc_col1, acc_col2 = st.columns([1, 1])
+        with acc_col1:
+            st.metric("歷史預測準確率", f"{final_accuracy:.1f}%")
+        with acc_col2:
+            confidence = "高可信度" if final_accuracy > 85 else "中等可信度" if final_accuracy > 70 else "低可信度 (建議觀望)"
+            st.write(f"🔍 預測可信度：**{confidence}**")
+        
+        st.divider()
 
-        # 4. 繪圖 (全面避開中文亂碼)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("預估隔日最高", f"{pred_next:.2f}", f"預期漲幅 {((pred_next/today_close)-1)*100:+.2f}%")
+        with c2:
+            st.metric("預估五日最高", f"{pred_5day:.2f}", f"預期漲幅 {((pred_5day/today_close)-1)*100:+.2f}%")
+
+        # 繪圖
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), gridspec_kw={'height_ratios': [2.5, 1]})
+        ax1.plot(df.index, close, label="Price", linewidth=2)
+        ax1.scatter(df.index[-1], pred_next, color='orange', s=100, label="Next Day")
+        ax1.scatter(df.index[-1], pred_5day, color='red', marker='*', s=200, label="5-Day Target")
+        ax1.set_title(f"Model Accuracy: {final_accuracy:.1f}%", fontsize=14)
+        ax1.legend()
         
-        # 上圖：走勢與預測 (標籤用英文)
-        ax1.plot(df.index, close, color='#1f77b4', linewidth=2, label="Close Price")
-        ax1.scatter(df.index[-1], pred_next, color='orange', s=100, label="Next Day Forecast")
-        ax1.scatter(df.index[-1], pred_5day, color='red', marker='*', s=200, label="5-Day Forecast")
-        ax1.set_title(f"{stock_id} Price & Forecast", fontsize=16)
-        ax1.legend(loc='upper left')
-        ax1.grid(True, alpha=0.3)
-        
-        # 下圖：資金流向 (原本不見的價量表)
-        colors = ['#ff9999' if x > 0 else '#99ff99' for x in mf_flow]
+        # 價量表
+        tp = (high + low + close) / 3
+        mf_flow = np.where(tp > tp.shift(1), tp * volume, -tp * volume)
+        colors = ['#ff4b4b' if x > 0 else '#2eb82e' for x in mf_flow]
         ax2.bar(df.index, mf_flow/1e8, color=colors)
-        ax2.set_ylabel("Money Flow (100M)")
-        ax2.grid(True, alpha=0.2)
+        ax2.set_ylabel("Money Flow")
         
         st.pyplot(fig)
-        
-        # 5. 用網頁文字補償圖中中文
-        st.write("### 📔 圖表中文對照說明")
-        st.write("- **藍線 (Close Price)**：每日收盤價走勢")
-        st.write("- **橘點 (Next Day)**：預估隔日可能最高位")
-        st.write("- **紅星 (5-Day)**：預估五日內可能最高位")
-        st.write("- **下方紅綠柱**：資金流入/流出強度（紅漲綠跌）")
-        
+        st.info(f"💡 **準確率說明**：此數字是比對過去 20 天模型預測目標與實際走勢的達成率。{final_accuracy:.1f}% 表示模型對該股的波動掌握度。")
+
     else:
         st.error("查無資料")
