@@ -18,27 +18,36 @@ def navigate_to(new_mode):
     st.session_state.mode = new_mode
     st.rerun()
 
-# --- 🎯 真實準確率計算函數 ---
+# --- 🎯 優化後的準確率計算函數 ---
 def calculate_real_accuracy(df, atr_factor, side='high'):
     try:
         df_copy = df.copy().ffill()
-        if len(df_copy) < 30: return 85.0
-        backtest_days = 20
+        # 增加回測深度至 60 天，讓百分比更細膩
+        backtest_days = min(len(df_copy) - 15, 60) 
+        if backtest_days <= 0: return 0.0
+        
         hits = 0
         for i in range(1, backtest_days + 1):
             idx = -i
             prev_close = df_copy['Close'].iloc[idx-1]
+            # 計算當時的 ATR
             prev_atr = (df_copy['High'] - df_copy['Low']).rolling(14).mean().iloc[idx-1]
+            
+            if np.isnan(prev_atr): continue
+            
             actual_high = df_copy['High'].iloc[idx]
             actual_low = df_copy['Low'].iloc[idx]
+            
             if side == 'high':
                 pred_h = prev_close + (prev_atr * atr_factor)
                 if actual_high <= pred_h: hits += 1
             else:
                 pred_l = prev_close - (prev_atr * atr_factor)
                 if actual_low >= pred_l: hits += 1
+        
         return (hits / backtest_days) * 100
-    except: return 88.0
+    except:
+        return 0.0
 
 # --- 獲取中文名稱 ---
 def get_stock_name(stock_id):
@@ -52,17 +61,16 @@ def get_stock_name(stock_id):
 
 # --- 自動偵測機制 ---
 @st.cache_data(ttl=3600)
-def fetch_stock_data(stock_id, period="100d"):
+def fetch_stock_data(stock_id, period="150d"): # 增加抓取長度以支援回測
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
         try:
             df = yf.download(symbol, period=period, progress=False)
-            # 關鍵修正：確保 df 不為 None 且不為空
             if df is not None and not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 return df, symbol
-        except Exception:
+        except:
             continue
     return None, None
 
@@ -70,6 +78,7 @@ def fetch_stock_data(stock_id, period="100d"):
 def stock_box(label, price, pct, acc, color_type="red"):
     bg_color = "#FF4B4B" if color_type == "red" else "#28A745"
     arrow = "↑" if color_type == "red" else "↓"
+    # 使用 :.2f 確保顯示到小數點後兩位
     st.markdown(f"""
         <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {bg_color}; margin-bottom: 10px;">
             <p style="margin:0; font-size:14px; color:#555;">{label}</p>
@@ -77,7 +86,7 @@ def stock_box(label, price, pct, acc, color_type="red"):
             <span style="background-color:{bg_color}; color:white; padding:2px 8px; border-radius:5px; font-size:14px;">
                 {arrow} {pct:.2f}%
             </span>
-            <p style="margin-top:10px; font-size:12px; color:#888;">↳ 近20日達成率：{acc:.1f}%</p>
+            <p style="margin-top:10px; font-size:12px; color:#888;">↳ 近 60 日回測達成率：<b>{acc:.2f}%</b></p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -94,18 +103,17 @@ elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("⚡ 盤中即時量價")
     tw_tz = pytz.timezone('Asia/Taipei')
-    is_market_open = datetime.datetime.now(tw_tz).weekday() < 5 and (9 <= datetime.datetime.now(tw_tz).hour < 14)
+    now = datetime.datetime.now(tw_tz)
+    is_market_open = now.weekday() < 5 and (9 <= now.hour < 14)
     stock_id = st.text_input("輸入代碼:")
     if stock_id:
         if not is_market_open:
-            st.error("🚫 【目前未開盤】今日非交易時段。")
-        else:
-            df, sym = fetch_stock_data(stock_id, period="1d")
-            # 加入安全性檢查
-            if df is None or df.empty:
-                st.error("❌ 找不到數據")
-                st.stop()
-            st.metric(f"{get_stock_name(stock_id)} 現價", f"{df['Close'].iloc[-1]:.2f}")
+            st.warning("🚫 目前非交易時段，顯示最後收盤資訊。")
+        df, sym = fetch_stock_data(stock_id, period="5d")
+        if df is None or df.empty:
+            st.error("❌ 找不到數據")
+            st.stop()
+        st.metric(f"{get_stock_name(stock_id)} 現價", f"{df['Close'].iloc[-1]:.2f}")
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -113,22 +121,18 @@ elif st.session_state.mode == "forecast":
     stock_id = st.text_input("輸入代碼 (如: 8358):")
 
     if stock_id:
-        with st.spinner('AI 精算中...'):
+        with st.spinner('AI 正在回測歷史規律...'):
             df, sym = fetch_stock_data(stock_id)
             
-            # --- 🛡️ 數據安全性檢查區塊 ---
             if df is None or df.empty:
-                st.error("❌ 找不到數據，請確認代碼是否正確。")
-                st.stop() # 停止執行後續邏輯
-            # --------------------------
+                st.error("❌ 找不到數據，請確認代碼。")
+                st.stop()
 
             name = get_stock_name(stock_id)
             df = df.ffill()
             
-            # 額外檢查：數據長度是否足夠計算 ATR
-            if len(df) < 15:
-                st.warning("⚠️ 數據量不足，無法進行分析。")
-                st.stop()
+            if len(df) < 20:
+                st.warning("⚠️ 數據量不足，準確率參考價值較低。")
 
             close = df['Close']
             atr_series = (df['High'] - df['Low']).rolling(14).mean()
@@ -136,6 +140,7 @@ elif st.session_state.mode == "forecast":
             curr_c = float(close.iloc[-1])
             est_open = curr_c + (atr * 0.05)
 
+            # 計算高精度的達成率
             acc_h1 = calculate_real_accuracy(df, 0.85, 'high')
             acc_h5 = calculate_real_accuracy(df, 1.9, 'high')
             acc_l1 = calculate_real_accuracy(df, 0.65, 'low')
@@ -149,20 +154,13 @@ elif st.session_state.mode == "forecast":
             st.divider()
             c1, c2 = st.columns(2)
             with c1:
-                st.write("🎯 **壓力預估**")
+                st.write("🎯 **壓力預估 (不漲破機率)**")
                 stock_box("📈 隔日最高", curr_c + atr*0.85, (( (curr_c + atr*0.85)/curr_c)-1)*100, acc_h1, "red")
                 stock_box("🚩 五日最高", curr_c + atr*1.9, (( (curr_c + atr*1.9)/curr_c)-1)*100, acc_h5, "red")
             with c2:
-                st.write("🛡️ **支撐預估**")
+                st.write("🛡️ **支撐預估 (不跌破機率)**")
                 stock_box("📉 隔日最低", curr_c - atr*0.65, (( (curr_c - atr*0.65)/curr_c)-1)*100, acc_l1, "green")
                 stock_box("⚓ 五日最低", curr_c - atr*1.6, (( (curr_c - atr*1.6)/curr_c)-1)*100, acc_l5, "green")
-
-            st.divider()
-            st.markdown("### 🏹 明日當沖建議價格")
-            d1, d2, d3 = st.columns(3)
-            d1.info(f"🔹 強勢買入\n\n{est_open - (atr * 0.1):.2f}")
-            d2.error(f"🔹 低接買入\n\n{curr_c - (atr * 0.45):.2f}")
-            d3.success(f"🔸 短線賣出\n\n{curr_c + (atr * 0.75):.2f}")
 
             # --- 📊 價量走勢圖 ---
             st.divider()
@@ -170,6 +168,7 @@ elif st.session_state.mode == "forecast":
             plot_df = df.tail(40)
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
             
+            # 上方價格圖
             ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=2, label="Price")
             ax1.fill_between(plot_df.index, plot_df['Low'], plot_df['High'], color='#1f77b4', alpha=0.1)
             ax1.axhline(y=curr_c + atr*1.9, color='#FF4B4B', ls='--', alpha=0.5, label="Resistance")
@@ -178,18 +177,23 @@ elif st.session_state.mode == "forecast":
             ax1.legend(loc='upper left')
             ax1.grid(axis='y', alpha=0.3)
 
-            # 修正成交量顏色邏輯
+            # 下方成交量圖
             colors = ['red' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
             ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.7)
             ax2.set_ylabel("Volume")
             ax2.grid(axis='y', alpha=0.3)
 
             plt.xticks(rotation=45)
+            
+            # 1. 先顯示圖表
             st.pyplot(fig)
 
+            # 2. 緊接著顯示圖表說明 (放在這裡最合適)
             st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量（紅漲綠跌）。")
+
+            # 3. 最後放技術細節補充
             st.markdown(f"""
-                * **達成率計算原理**：系統自動回測該股過去 20 個交易日的波動規慮。
-                * **Resistance (紅虛線)**：預估五日最高壓力位。
-                * **Support (綠虛線)**：預估五日最低支撐位。
-                """)
+            * **達成率計算原理**：系統自動回測該股過去 **60 個交易日** 的波動規律。
+            * **Resistance (紅虛線)**：預估五日最高壓力位。
+            * **Support (綠虛線)**：預估五日最低支撐位。
+            """)
