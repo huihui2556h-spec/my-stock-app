@@ -151,4 +151,11 @@ elif st.session_state.mode == "forecast":
                 ax.axhline(y=curr_c + atr*1.9, color='red', ls='--', alpha=0.3)
                 ax.axhline(y=curr_c - atr*1.6, color='green', ls='--', alpha=0.3)
                 st.pyplot(fig)
-                st.info("📘 **圖表說明**：紅虛線為壓力位，綠虛線為支撐位。已自動依據台股配色習慣修正。")
+               
+            st.info("📘 **圖表數據深度註解**")
+                st.markdown(f"""
+                * **達成率計算原理**：系統自動回測該股過去 20 個交易日的波動規律，計算股價守在預估區間內的機率。
+                * **Resistance (紅虛線)**：預估五日最高壓力位。
+                * **Support (綠虛線)**：預估五日最低支撐位。
+                """)
+
