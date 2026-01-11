@@ -143,6 +143,10 @@ elif st.session_state.mode == "forecast":
                 v1.metric("目前收盤價", f"{curr_c:.2f}")
                 v2.metric("預估明日開盤", f"{est_open:.2f}")
 
+                except Exception as e:
+                st.error(f"⚠️ 處理數據時發生錯誤: {e}")
+                st.stop()
+
                 st.divider()
                 c1, c2 = st.columns(2)
                 with c1:
@@ -193,3 +197,4 @@ elif st.session_state.mode == "forecast":
                 * **Resistance (紅虛線)**：預估五日最高壓力位。
                 * **Support (綠虛線)**：預估五日最低支撐位。
                 """)
+
