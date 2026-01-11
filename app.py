@@ -128,12 +128,10 @@ elif st.session_state.mode == "forecast":
 
                 st.divider()
                 c1, c2 = st.columns(2)
-                
                 with c1:
                     st.write("🎯 **壓力預估**")
                     stock_box("📈 隔日最高", curr_c + atr*0.85, (( (curr_c + atr*0.85)/curr_c)-1)*100, acc_h1, "red")
                     stock_box("🚩 五日最高", curr_c + atr*1.9, (( (curr_c + atr*1.9)/curr_c)-1)*100, acc_h5, "red")
-                
                 with c2:
                     st.write("🛡️ **支撐預估**")
                     stock_box("📉 隔日最低", curr_c - atr*0.65, (( (curr_c - atr*0.65)/curr_c)-1)*100, acc_l1, "green")
@@ -146,17 +144,35 @@ elif st.session_state.mode == "forecast":
                 d2.error(f"🔹 低接買入\n\n{curr_c - (atr * 0.45):.2f}")
                 d3.success(f"🔸 短線賣出\n\n{curr_c + (atr * 0.75):.2f}")
 
-                fig, ax = plt.subplots(figsize=(10, 4))
-                ax.plot(df.index[-40:], close.tail(40), color='#1f77b4')
-                ax.axhline(y=curr_c + atr*1.9, color='red', ls='--', alpha=0.3)
-                ax.axhline(y=curr_c - atr*1.6, color='green', ls='--', alpha=0.3)
+                # --- 📊 重新找回「價量表」 (K線 + 成交量) ---
+                st.divider()
+                st.write("📈 **近期價量走勢圖**")
+                
+                # 準備繪圖資料 (近 40 天)
+                plot_df = df.tail(40)
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+                
+                # 上方圖：價格與預估線
+                ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=2, label="Price")
+                ax1.fill_between(plot_df.index, plot_df['Low'], plot_df['High'], color='#1f77b4', alpha=0.1)
+                ax1.axhline(y=curr_c + atr*1.9, color='#FF4B4B', ls='--', alpha=0.5, label="Resistance")
+                ax1.axhline(y=curr_c - atr*1.6, color='#28A745', ls='--', alpha=0.5, label="Support")
+                ax1.set_ylabel("Price")
+                ax1.legend(loc='upper left')
+                ax1.grid(axis='y', alpha=0.3)
+
+                # 下方圖：成交量
+                colors = ['red' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
+                ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.7)
+                ax2.set_ylabel("Volume")
+                ax2.grid(axis='y', alpha=0.3)
+
+                plt.xticks(rotation=45)
                 st.pyplot(fig)
-                st.info("📘 **圖表說明**：紅虛線為壓力位，綠虛線為支撐位。")
+
+                st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量（紅漲綠跌）。")
                 st.markdown(f"""
-                * **達成率計算原理**：系統自動回測該股過去 20 個交易日的波動規律，計算股價守在預估區間內的機率。
+                * **達成率計算原理**：系統自動回測該股過去 20 個交易日的波動規慮。
                 * **Resistance (紅虛線)**：預估五日最高壓力位。
                 * **Support (綠虛線)**：預估五日最低支撐位。
                 """)
-
-
-
