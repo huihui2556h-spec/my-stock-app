@@ -104,9 +104,6 @@ elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("📊 隔日當沖與波段預估")
     stock_id = st.text_input("輸入代碼 (如: 8358):")
-    if df is None:
-    print("❌ 找不到數據")
-    sys.exit()
 
     if stock_id:
         with st.spinner('AI 精算中...'):
@@ -139,7 +136,9 @@ elif st.session_state.mode == "forecast":
                     st.write("🛡️ **支撐預估**")
                     stock_box("📉 隔日最低", curr_c - atr*0.65, (( (curr_c - atr*0.65)/curr_c)-1)*100, acc_l1, "green")
                     stock_box("⚓ 五日最低", curr_c - atr*1.6, (( (curr_c - atr*1.6)/curr_c)-1)*100, acc_l5, "green")
-
+               if df is None:
+                 print("❌ 找不到數據")
+                 sys.exit()
                 st.divider()
                 st.markdown("### 🏹 明日當沖建議價格")
                 d1, d2, d3 = st.columns(3)
@@ -179,4 +178,5 @@ elif st.session_state.mode == "forecast":
                 * **Resistance (紅虛線)**：預估五日最高壓力位。
                 * **Support (綠虛線)**：預估五日最低支撐位。
                 """)
+
 
