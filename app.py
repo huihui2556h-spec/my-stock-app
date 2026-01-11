@@ -84,7 +84,7 @@ if st.session_state.mode == "home":
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
     with col_b:
-        if st.button("📊 隔日當沖預估", use_container_width=True): navigate_to("forecast")
+        if st.button("📊 隔日當沖及波段預估", use_container_width=True): navigate_to("forecast")
 
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -157,5 +157,6 @@ elif st.session_state.mode == "forecast":
                 * **Resistance (紅虛線)**：預估五日最高壓力位。
                 * **Support (綠虛線)**：預估五日最低支撐位。
                 """)
+
 
 
