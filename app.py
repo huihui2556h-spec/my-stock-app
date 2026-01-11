@@ -55,12 +55,16 @@ def get_stock_name(stock_id):
 def fetch_stock_data(stock_id, period="100d"):
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
-        df = yf.download(symbol, period=period, progress=False)
-        if not df.empty:
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            return df, symbol
-    return pd.DataFrame(), None
+        try:
+            df = yf.download(symbol, period=period, progress=False)
+            # 關鍵修正：確保 df 不為 None 且不為空
+            if df is not None and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                return df, symbol
+        except Exception:
+            continue
+    return None, None
 
 # --- 🎨 自定義台股配色組件 ---
 def stock_box(label, price, pct, acc, color_type="red"):
@@ -97,8 +101,11 @@ elif st.session_state.mode == "realtime":
             st.error("🚫 【目前未開盤】今日非交易時段。")
         else:
             df, sym = fetch_stock_data(stock_id, period="1d")
-            if not df.empty:
-                st.metric(f"{get_stock_name(stock_id)} 現價", f"{df['Close'].iloc[-1]:.2f}")
+            # 加入安全性檢查
+            if df is None or df.empty:
+                st.error("❌ 找不到數據")
+                st.stop()
+            st.metric(f"{get_stock_name(stock_id)} 現價", f"{df['Close'].iloc[-1]:.2f}")
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -108,93 +115,76 @@ elif st.session_state.mode == "forecast":
     if stock_id:
         with st.spinner('AI 精算中...'):
             df, sym = fetch_stock_data(stock_id)
-           if df is None or df.empty:
-                st.error(f"❌ 找不到數據：無法獲取代碼 '{stock_id}' 的資料。")
-                st.info("💡 提醒：台股請輸入數字代碼（如 2330），且需確認該股非處於長期停牌狀態。")
-                st.stop() 
+            
+            # --- 🛡️ 數據安全性檢查區塊 ---
+            if df is None or df.empty:
+                st.error("❌ 找不到數據，請確認代碼是否正確。")
+                st.stop() # 停止執行後續邏輯
+            # --------------------------
 
-            try:
-                name = get_stock_name(stock_id)
-                df = df.ffill()
-                
-                if len(df) < 15:
-                    st.warning("⚠️ 數據量不足（歷史資料少於 15 筆），無法進行精確分析。")
-                    st.stop()
-
-                close = df['Close']
-             
-                atr_series = (df['High'] - df['Low']).rolling(14).mean()
-                atr = atr_series.iloc[-1]
-                
-               
-                if np.isnan(atr):
-                    st.error("❌ 無法計算波動率 (ATR)，請稍後再試。")
-                    st.stop()
-                curr_c = float(close.iloc[-1])
-                est_open = curr_c + (atr * 0.05)
-
-                acc_h1 = calculate_real_accuracy(df, 0.85, 'high')
-                acc_h5 = calculate_real_accuracy(df, 1.9, 'high')
-                acc_l1 = calculate_real_accuracy(df, 0.65, 'low')
-                acc_l5 = calculate_real_accuracy(df, 1.6, 'low')
-
-                st.subheader(f"🏠 {name} ({stock_id}) 預估分析")
-                v1, v2 = st.columns(2)
-                v1.metric("目前收盤價", f"{curr_c:.2f}")
-                v2.metric("預估明日開盤", f"{est_open:.2f}")
-
-                except Exception as e:
-                st.error(f"⚠️ 處理數據時發生錯誤: {e}")
+            name = get_stock_name(stock_id)
+            df = df.ffill()
+            
+            # 額外檢查：數據長度是否足夠計算 ATR
+            if len(df) < 15:
+                st.warning("⚠️ 數據量不足，無法進行分析。")
                 st.stop()
 
-                st.divider()
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.write("🎯 **壓力預估**")
-                    stock_box("📈 隔日最高", curr_c + atr*0.85, (( (curr_c + atr*0.85)/curr_c)-1)*100, acc_h1, "red")
-                    stock_box("🚩 五日最高", curr_c + atr*1.9, (( (curr_c + atr*1.9)/curr_c)-1)*100, acc_h5, "red")
-                with c2:
-                    st.write("🛡️ **支撐預估**")
-                    stock_box("📉 隔日最低", curr_c - atr*0.65, (( (curr_c - atr*0.65)/curr_c)-1)*100, acc_l1, "green")
-                    stock_box("⚓ 五日最低", curr_c - atr*1.6, (( (curr_c - atr*1.6)/curr_c)-1)*100, acc_l5, "green")
+            close = df['Close']
+            atr_series = (df['High'] - df['Low']).rolling(14).mean()
+            atr = float(atr_series.iloc[-1])
+            curr_c = float(close.iloc[-1])
+            est_open = curr_c + (atr * 0.05)
 
-                st.divider()
-                st.markdown("### 🏹 明日當沖建議價格")
-                d1, d2, d3 = st.columns(3)
-                d1.info(f"🔹 強勢買入\n\n{est_open - (atr * 0.1):.2f}")
-                d2.error(f"🔹 低接買入\n\n{curr_c - (atr * 0.45):.2f}")
-                d3.success(f"🔸 短線賣出\n\n{curr_c + (atr * 0.75):.2f}")
+            acc_h1 = calculate_real_accuracy(df, 0.85, 'high')
+            acc_h5 = calculate_real_accuracy(df, 1.9, 'high')
+            acc_l1 = calculate_real_accuracy(df, 0.65, 'low')
+            acc_l5 = calculate_real_accuracy(df, 1.6, 'low')
 
-                # --- 📊 重新找回「價量表」 (K線 + 成交量) ---
-                st.divider()
-                st.write("📈 **近期價量走勢圖**")
-                
-                # 準備繪圖資料 (近 40 天)
-                plot_df = df.tail(40)
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
-                
-                # 上方圖：價格與預估線
-                ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=2, label="Price")
-                ax1.fill_between(plot_df.index, plot_df['Low'], plot_df['High'], color='#1f77b4', alpha=0.1)
-                ax1.axhline(y=curr_c + atr*1.9, color='#FF4B4B', ls='--', alpha=0.5, label="Resistance")
-                ax1.axhline(y=curr_c - atr*1.6, color='#28A745', ls='--', alpha=0.5, label="Support")
-                ax1.set_ylabel("Price")
-                ax1.legend(loc='upper left')
-                ax1.grid(axis='y', alpha=0.3)
+            st.subheader(f"🏠 {name} ({stock_id}) 預估分析")
+            v1, v2 = st.columns(2)
+            v1.metric("目前收盤價", f"{curr_c:.2f}")
+            v2.metric("預估明日開盤", f"{est_open:.2f}")
 
-                # 下方圖：成交量
-                colors = ['red' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
-                ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.7)
-                ax2.set_ylabel("Volume")
-                ax2.grid(axis='y', alpha=0.3)
+            st.divider()
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write("🎯 **壓力預估**")
+                stock_box("📈 隔日最高", curr_c + atr*0.85, (( (curr_c + atr*0.85)/curr_c)-1)*100, acc_h1, "red")
+                stock_box("🚩 五日最高", curr_c + atr*1.9, (( (curr_c + atr*1.9)/curr_c)-1)*100, acc_h5, "red")
+            with c2:
+                st.write("🛡️ **支撐預估**")
+                stock_box("📉 隔日最低", curr_c - atr*0.65, (( (curr_c - atr*0.65)/curr_c)-1)*100, acc_l1, "green")
+                stock_box("⚓ 五日最低", curr_c - atr*1.6, (( (curr_c - atr*1.6)/curr_c)-1)*100, acc_l5, "green")
 
-                plt.xticks(rotation=45)
-                st.pyplot(fig)
+            st.divider()
+            st.markdown("### 🏹 明日當沖建議價格")
+            d1, d2, d3 = st.columns(3)
+            d1.info(f"🔹 強勢買入\n\n{est_open - (atr * 0.1):.2f}")
+            d2.error(f"🔹 低接買入\n\n{curr_c - (atr * 0.45):.2f}")
+            d3.success(f"🔸 短線賣出\n\n{curr_c + (atr * 0.75):.2f}")
 
-                st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量（紅漲綠跌）。")
-                st.markdown(f"""
-                * **達成率計算原理**：系統自動回測該股過去 20 個交易日的波動規慮。
-                * **Resistance (紅虛線)**：預估五日最高壓力位。
-                * **Support (綠虛線)**：預估五日最低支撐位。
-                """)
+            # --- 📊 價量走勢圖 ---
+            st.divider()
+            st.write("📈 **近期價量走勢圖**")
+            plot_df = df.tail(40)
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+            
+            ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=2, label="Price")
+            ax1.fill_between(plot_df.index, plot_df['Low'], plot_df['High'], color='#1f77b4', alpha=0.1)
+            ax1.axhline(y=curr_c + atr*1.9, color='#FF4B4B', ls='--', alpha=0.5, label="Resistance")
+            ax1.axhline(y=curr_c - atr*1.6, color='#28A745', ls='--', alpha=0.5, label="Support")
+            ax1.set_ylabel("Price")
+            ax1.legend(loc='upper left')
+            ax1.grid(axis='y', alpha=0.3)
 
+            # 修正成交量顏色邏輯
+            colors = ['red' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
+            ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.7)
+            ax2.set_ylabel("Volume")
+            ax2.grid(axis='y', alpha=0.3)
+
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
+
+            st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量（紅漲綠跌）。")
