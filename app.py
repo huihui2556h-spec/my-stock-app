@@ -108,24 +108,30 @@ elif st.session_state.mode == "forecast":
     if stock_id:
         with st.spinner('AI 精算中...'):
             df, sym = fetch_stock_data(stock_id)
-          # --- 🚀 加入你的數據安全性檢查 ---
-            if df is None or df.empty:
-                st.error("❌ 找不到數據，請確認代碼是否正確（如台積電輸入 2330）。")
-                st.stop()  # 停止執行後續繪圖邏輯，避免報錯
-            # -------------------------------
+           if df is None or df.empty:
+                st.error(f"❌ 找不到數據：無法獲取代碼 '{stock_id}' 的資料。")
+                st.info("💡 提醒：台股請輸入數字代碼（如 2330），且需確認該股非處於長期停牌狀態。")
+                st.stop() 
 
-            name = get_stock_name(stock_id)
-            df = df.ffill()
-            close = df['Close']
-            
-            # 額外安全性檢查：確保數據長度足以計算 ATR (14日)
-            if len(df) < 14:
-                st.warning("⚠️ 數據量不足（少於 14 日），無法進行精確預估。")
-                st.stop()
+            try:
+                name = get_stock_name(stock_id)
+                df = df.ffill()
+                
+                if len(df) < 15:
+                    st.warning("⚠️ 數據量不足（歷史資料少於 15 筆），無法進行精確分析。")
+                    st.stop()
 
-            atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
-            curr_c = float(close.iloc[-1])
-            est_open = curr_c + (atr * 0.05)
+                close = df['Close']
+             
+                atr_series = (df['High'] - df['Low']).rolling(14).mean()
+                atr = atr_series.iloc[-1]
+                
+               
+                if np.isnan(atr):
+                    st.error("❌ 無法計算波動率 (ATR)，請稍後再試。")
+                    st.stop()
+                curr_c = float(close.iloc[-1])
+                est_open = curr_c + (atr * 0.05)
 
                 acc_h1 = calculate_real_accuracy(df, 0.85, 'high')
                 acc_h5 = calculate_real_accuracy(df, 1.9, 'high')
@@ -147,7 +153,7 @@ elif st.session_state.mode == "forecast":
                     st.write("🛡️ **支撐預估**")
                     stock_box("📉 隔日最低", curr_c - atr*0.65, (( (curr_c - atr*0.65)/curr_c)-1)*100, acc_l1, "green")
                     stock_box("⚓ 五日最低", curr_c - atr*1.6, (( (curr_c - atr*1.6)/curr_c)-1)*100, acc_l5, "green")
-               
+
                 st.divider()
                 st.markdown("### 🏹 明日當沖建議價格")
                 d1, d2, d3 = st.columns(3)
@@ -187,6 +193,3 @@ elif st.session_state.mode == "forecast":
                 * **Resistance (紅虛線)**：預估五日最高壓力位。
                 * **Support (綠虛線)**：預估五日最低支撐位。
                 """)
-
-
-
