@@ -18,37 +18,27 @@ def navigate_to(new_mode):
     st.session_state.mode = new_mode
     st.rerun()
 
-# --- 🎯 真實準確率計算函數 (回測過去 20 個交易日) ---
+# --- 🎯 真實準確率計算函數 ---
 def calculate_real_accuracy(df, atr_factor, side='high'):
     try:
         df_copy = df.copy().ffill()
-        if len(df_copy) < 30: return 85.0 # 數據不足返回預設基準
-        
+        if len(df_copy) < 30: return 85.0
         backtest_days = 20
         hits = 0
-        # 計算過去 20 天，每一天根據前一天數據算的預估位是否準確
         for i in range(1, backtest_days + 1):
             idx = -i
-            # 前一天的數據
             prev_close = df_copy['Close'].iloc[idx-1]
-            prev_high = df_copy['High'].iloc[idx-1]
-            prev_low = df_copy['Low'].iloc[idx-1]
             prev_atr = (df_copy['High'] - df_copy['Low']).rolling(14).mean().iloc[idx-1]
-            
-            # 當天的實際走勢
             actual_high = df_copy['High'].iloc[idx]
             actual_low = df_copy['Low'].iloc[idx]
-            
             if side == 'high':
                 pred_h = prev_close + (prev_atr * atr_factor)
-                if actual_high <= pred_h: hits += 1 # 壓在壓力位之下代表預測成功
+                if actual_high <= pred_h: hits += 1
             else:
                 pred_l = prev_close - (prev_atr * atr_factor)
-                if actual_low >= pred_l: hits += 1 # 撐在支撐位之上代表預測成功
-                
+                if actual_low >= pred_l: hits += 1
         return (hits / backtest_days) * 100
-    except:
-        return 88.0
+    except: return 88.0
 
 # --- 獲取中文名稱 ---
 def get_stock_name(stock_id):
@@ -60,19 +50,34 @@ def get_stock_name(stock_id):
         return name.split('-')[0].strip()
     except: return f"台股 {stock_id}"
 
-# --- 自動偵測機制 (上市/上櫃) ---
+# --- 自動偵測機制 ---
 @st.cache_data(ttl=3600)
-def fetch_stock_data(stock_id, period="100d", interval="1d"):
+def fetch_stock_data(stock_id, period="100d"):
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
-        df = yf.download(symbol, period=period, interval=interval, progress=False)
+        df = yf.download(symbol, period=period, progress=False)
         if not df.empty:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             return df, symbol
     return pd.DataFrame(), None
 
-# --- 分頁邏輯 ---
+# --- 🎨 自定義台股配色組件 ---
+def stock_box(label, price, pct, acc, color_type="red"):
+    bg_color = "#FF4B4B" if color_type == "red" else "#28A745"
+    arrow = "↑" if color_type == "red" else "↓"
+    st.markdown(f"""
+        <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {bg_color}; margin-bottom: 10px;">
+            <p style="margin:0; font-size:14px; color:#555;">{label}</p>
+            <h2 style="margin:0; padding:5px 0; color:#333;">{price:.2f}</h2>
+            <span style="background-color:{bg_color}; color:white; padding:2px 8px; border-radius:5px; font-size:14px;">
+                {arrow} {pct:.2f}%
+            </span>
+            <p style="margin-top:10px; font-size:12px; color:#888;">↳ 近20日達成率：{acc:.1f}%</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- 主程式邏輯 ---
 if st.session_state.mode == "home":
     st.title("⚖️ 台股 AI 交易決策系統")
     col_a, col_b = st.columns(2)
@@ -89,9 +94,9 @@ elif st.session_state.mode == "realtime":
     stock_id = st.text_input("輸入代碼:")
     if stock_id:
         if not is_market_open:
-            st.error("🚫 【目前未開盤】今日非交易時段，不顯示價格。")
+            st.error("🚫 【目前未開盤】今日非交易時段。")
         else:
-            df, sym = fetch_stock_data(stock_id, period="1d", interval="1m")
+            df, sym = fetch_stock_data(stock_id, period="1d")
             if not df.empty:
                 st.metric(f"{get_stock_name(stock_id)} 現價", f"{df['Close'].iloc[-1]:.2f}")
 
@@ -101,7 +106,7 @@ elif st.session_state.mode == "forecast":
     stock_id = st.text_input("輸入代碼 (如: 8358):")
 
     if stock_id:
-        with st.spinner('AI 動態計算準確率中...'):
+        with st.spinner('AI 精算中...'):
             df, sym = fetch_stock_data(stock_id)
             if not df.empty:
                 name = get_stock_name(stock_id)
@@ -111,7 +116,6 @@ elif st.session_state.mode == "forecast":
                 curr_c = float(close.iloc[-1])
                 est_open = curr_c + (atr * 0.05)
 
-                # --- 核心：動態計算達成率 ---
                 acc_h1 = calculate_real_accuracy(df, 0.85, 'high')
                 acc_h5 = calculate_real_accuracy(df, 1.9, 'high')
                 acc_l1 = calculate_real_accuracy(df, 0.65, 'low')
@@ -124,18 +128,16 @@ elif st.session_state.mode == "forecast":
 
                 st.divider()
                 c1, c2 = st.columns(2)
+                
                 with c1:
                     st.write("🎯 **壓力預估**")
-                    st.metric("📈 隔日最高", f"{curr_c + atr*0.85:.2f}", f"+{(( (curr_c + atr*0.85)/curr_c)-1)*100:.2f}%")
-                    st.caption(f"↳ 近20日達成率：{acc_h1:.1f}%")
-                    st.metric("🚩 五日最高", f"{curr_c + atr*1.9:.2f}", f"+{(( (curr_c + atr*1.9)/curr_c)-1)*100:.2f}%")
-                    st.caption(f"↳ 近20日達成率：{acc_h5:.1f}%")
+                    stock_box("📈 隔日最高", curr_c + atr*0.85, (( (curr_c + atr*0.85)/curr_c)-1)*100, acc_h1, "red")
+                    stock_box("🚩 五日最高", curr_c + atr*1.9, (( (curr_c + atr*1.9)/curr_c)-1)*100, acc_h5, "red")
+                
                 with c2:
                     st.write("🛡️ **支撐預估**")
-                    st.metric("📉 隔日最低", f"{curr_c - atr*0.65:.2f}", f"{(( (curr_c - atr*0.65)/curr_c)-1)*100:.2f}%", delta_color="inverse")
-                    st.caption(f"↳ 近20日達成率：{acc_l1:.1f}%")
-                    st.metric("⚓ 五日最低", f"{curr_c - atr*1.6:.2f}", f"{(( (curr_c - atr*1.6)/curr_c)-1)*100:.2f}%", delta_color="inverse")
-                    st.caption(f"↳ 近20日達成率：{acc_l5:.1f}%")
+                    stock_box("📉 隔日最低", curr_c - atr*0.65, (( (curr_c - atr*0.65)/curr_c)-1)*100, acc_l1, "green")
+                    stock_box("⚓ 五日最低", curr_c - atr*1.6, (( (curr_c - atr*1.6)/curr_c)-1)*100, acc_l5, "green")
 
                 st.divider()
                 st.markdown("### 🏹 明日當沖建議價格")
@@ -144,17 +146,9 @@ elif st.session_state.mode == "forecast":
                 d2.error(f"🔹 低接買入\n\n{curr_c - (atr * 0.45):.2f}")
                 d3.success(f"🔸 短線賣出\n\n{curr_c + (atr * 0.75):.2f}")
 
-                # 繪圖
                 fig, ax = plt.subplots(figsize=(10, 4))
-                ax.plot(df.index[-40:], close.tail(40), color='#1f77b4', label="Price Trend")
-                ax.axhline(y=curr_c + atr*1.9, color='red', ls='--', alpha=0.3, label="Resistance")
-                ax.axhline(y=curr_c - atr*1.6, color='green', ls='--', alpha=0.3, label="Support")
-                ax.legend(loc='upper left')
+                ax.plot(df.index[-40:], close.tail(40), color='#1f77b4')
+                ax.axhline(y=curr_c + atr*1.9, color='red', ls='--', alpha=0.3)
+                ax.axhline(y=curr_c - atr*1.6, color='green', ls='--', alpha=0.3)
                 st.pyplot(fig)
-
-                st.info("📘 **圖表數據深度註解**")
-                st.markdown(f"""
-                * **達成率計算原理**：系統自動回測該股過去 20 個交易日的波動規律，計算股價守在預估區間內的機率。
-                * **Resistance (紅虛線)**：預估五日最高壓力位。
-                * **Support (綠虛線)**：預估五日最低支撐位。
-                """)
+                st.info("📘 **圖表說明**：紅虛線為壓力位，綠虛線為支撐位。已自動依據台股配色習慣修正。")
