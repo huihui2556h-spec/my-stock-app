@@ -188,10 +188,8 @@ elif st.session_state.mode == "forecast":
             st.pyplot(fig)
 
             st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量（紅漲綠跌）。")
-                st.markdown(f"""
+            st.markdown(f"""
                 * **達成率計算原理**：系統自動回測該股過去 20 個交易日的波動規慮。
                 * **Resistance (紅虛線)**：預估五日最高壓力位。
                 * **Support (綠虛線)**：預估五日最低支撐位。
                 """)
-
-
