@@ -1,131 +1,84 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import matplotlib.pyplot as plt
 import numpy as np
-import requests
-import re
+import matplotlib.pyplot as plt
 
-# 1. 頁面優化設定
-st.set_page_config(page_title="台股交易助手", layout="centered", page_icon="📈")
+# 設定頁面
+st.set_page_config(page_title="台股秒級決策助手", layout="centered")
 
-def get_clean_info(sid):
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    name = f"股票 {sid}"
-    try:
-        res = requests.get(f"https://tw.stock.yahoo.com/quote/{sid}", headers=headers, timeout=10)
-        title_search = re.search(r'<title>(.*?) \(', res.text)
-        if title_search:
-            name = title_search.group(1).split('-')[0].strip()
-    except: pass
-    return name
+st.title("⚡ 盤中即時量價決策 (優化版)")
+st.caption("註：yfinance 免費版在盤中仍有約 15 分鐘延遲，實戰時請對照即時看盤軟體。")
 
-# --- 歡迎頁面邏輯 ---
-if 'started' not in st.session_state:
-    st.session_state.started = False
+stock_id = st.text_input("輸入台股代碼 (例如: 2330, 8088):")
 
-if not st.session_state.started:
-    st.title("⚖️ 台股交易決策系統")
-    st.image("https://cdn-icons-png.flaticon.com/512/2422/2422796.png", width=120)
-    st.write("### AI 壓力支撐分析系統")
-    st.write("精準計算隔日與五日達成率，移除雜訊，專注關鍵價位。")
-    if st.button("啟動系統"):
-        st.session_state.started = True
-        st.rerun()
-else:
-    st.title("🔍 專業策略分析")
-    if st.sidebar.button("⬅️ 返回首頁"):
-        st.session_state.started = False
-        st.rerun()
-
-    stock_id = st.text_input("輸入台股代碼 (例如: 2330, 8088):", placeholder="在此輸入代碼...")
-
-    if stock_id:
-        with st.spinner('正在分析中...'):
-            success = False
-            for suffix in [".TW", ".TWO"]:
-                ticker_str = f"{stock_id}{suffix}"
-                df = yf.download(ticker_str, period="150d", progress=False, auto_adjust=True)
-                if not df.empty and len(df) > 30:
-                    success = True
-                    break
+if stock_id:
+    with st.spinner('計算量能倍數與趨勢中...'):
+        symbol = f"{stock_id}.TW" if int(stock_id) < 10000 else f"{stock_id}.TWO"
+        
+        # 抓取 1分鐘 K線 (盤中最強數據) 與 日線 (算波動率)
+        ticker = yf.Ticker(symbol)
+        df_1m = ticker.history(interval="1m", period="1d") # 今日分鐘線
+        df_daily = ticker.history(period="20d") # 近期日線
+        
+        if not df_1m.empty and len(df_daily) > 1:
+            # 1. 基礎數據提取
+            curr_p = df_1m['Close'].iloc[-1]
+            open_p = df_1m['Open'].iloc[0]
+            prev_c = df_daily['Close'].iloc[-2]
             
-            if success:
-                df.columns = df.columns.get_level_values(0) if isinstance(df.columns, pd.MultiIndex) else df.columns
-                close, high, low = df['Close'].ffill(), df['High'].ffill(), df['Low'].ffill()
+            # 2. ATR 波動率計算 (使用日線)
+            high_low = df_daily['High'] - df_daily['Low']
+            high_cp = np.abs(df_daily['High'] - df_daily['Close'].shift())
+            low_cp = np.abs(df_daily['Low'] - df_daily['Close'].shift())
+            atr = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1).rolling(14).mean().iloc[-1]
+
+            # 3. 量能分析
+            curr_v = df_1m['Volume'].sum()
+            avg_v = df_daily['Volume'].mean()
+            vol_ratio = curr_v / avg_v # 當前成交量佔日均量的比例
+
+            # --- 動態策略邏輯 ---
+            st.subheader(f"📊 即時監控：{stock_id}")
+            
+            # 顯示看板
+            m1, m2, m3 = st.columns(3)
+            m1.metric("當前價", f"{curr_p:.2f}", f"{((curr_p/prev_c)-1)*100:+.2f}%")
+            m2.metric("開盤價", f"{open_p:.2f}", f"跳空 {((open_p/prev_c)-1)*100:+.2f}%")
+            m3.metric("量能倍數", f"{vol_ratio:.2f}x", "對比均量")
+
+            st.divider()
+
+            # --- 核心操作建議 (解決你買不到的問題) ---
+            if curr_p > open_p and curr_p > prev_c:
+                # 情況 A：強勢股 (開高走高或量大)
+                st.success("🔥 **多頭攻擊：趨勢強勁**")
+                # 強勢時，買點不能設太低，改設在開盤價上方一點點
+                st_buy = open_p + (atr * 0.1)
+                st_sell = curr_p + (atr * 0.8)
+                st.write(f"💡 **買進建議**：觀察 **{st_buy:.2f}** 是否守穩 (開盤價防線)")
+                st.write(f"💡 **停利目標**：預估壓力位 **{st_sell:.2f}**")
                 
-                tr = np.maximum(high - low, np.maximum(abs(high - close.shift(1)), abs(low - close.shift(1))))
-                atr = tr.rolling(14).mean().fillna(method='bfill')
-                
-                # --- 回測邏輯：修復 nan 與計算各別準確率 ---
-                acc_h1, acc_h5, acc_l1, acc_l5 = [], [], [], []
-                for i in range(25, 5, -1):
-                    p_c, p_a = close.iloc[-i], atr.iloc[-i]
-                    t_h1, t_h5 = p_c + (p_a * 0.8), p_c + (p_a * 1.8)
-                    t_l1, t_l5 = p_c - (p_a * 0.6), p_c - (p_a * 1.5)
-                    act_h1, act_l1 = high.iloc[-i+1], low.iloc[-i+1]
-                    act_h5, act_l5 = high.iloc[-i+1 : -i+6].max(), low.iloc[-i+1 : -i+6].min()
-                    
-                    if not (np.isnan(act_h1) or np.isnan(act_h5)):
-                        acc_h1.append(min(act_h1 / t_h1, 1.0) if t_h1 > 0 else 1.0)
-                        acc_h5.append(min(act_h5 / t_h5, 1.0) if t_h5 > 0 else 1.0)
-                        acc_l1.append(min(t_l1 / act_l1, 1.0) if act_l1 > 0 else 1.0)
-                        acc_l5.append(min(t_l5 / act_l5, 1.0) if act_l5 > 0 else 1.0)
-                
-                f_h1, f_h5 = (np.mean(acc_h1)*100 if acc_h1 else 92.5), (np.mean(acc_h5)*100 if acc_h5 else 89.0)
-                f_l1, f_l5 = (np.mean(acc_l1)*100 if acc_l1 else 91.5), (np.mean(acc_l5)*100 if acc_l5 else 87.0)
-
-                curr_c, curr_a = float(close.iloc[-1]), float(atr.iloc[-1])
-                p_h1, p_h5 = curr_c + (curr_a * 0.8), curr_c + (curr_a * 1.8)
-                p_l1, p_l5 = curr_c - (curr_a * 0.6), curr_c - (curr_a * 1.5)
-                buy_p, sell_p = curr_c - (curr_a * 0.3), curr_c + (curr_a * 0.7)
-
-                # --- UI 呈現 ---
-                st.subheader(f"🏠 {get_clean_info(stock_id)} ({stock_id})")
-                st.write(f"今日收盤價：**{curr_c:.2f}**")
-
-                st.markdown("### 🎯 目標壓力位")
-                col1, col2 = st.columns(2)
-                col1.metric("📈 隔日預估最高", f"{p_h1:.2f}", f"漲幅 {((p_h1/curr_c)-1)*100:+.2f}%")
-                col1.write(f"↳ 歷史準確率：**{f_h1:.1f}%**")
-                col2.metric("🚩 五日預估最高", f"{p_h5:.2f}", f"漲幅 {((p_h5/curr_c)-1)*100:+.2f}%")
-                col2.write(f"↳ 歷史準確率：**{f_h5:.1f}%**")
-
-                st.markdown("### 🛡️ 預估支撐位")
-                col3, col4 = st.columns(2)
-                col3.metric("📉 隔日預估最低", f"{p_l1:.2f}", f"跌幅 {((p_l1/curr_c)-1)*100:+.2f}%", delta_color="inverse")
-                col3.write(f"↳ 歷史準確率：**{f_l1:.1f}%**")
-                col4.metric("⚓ 五日預估最低", f"{p_l5:.2f}", f"跌幅 {((p_l5/curr_c)-1)*100:+.2f}%", delta_color="inverse")
-                col4.write(f"↳ 歷史準確率：**{f_l5:.1f}%**")
-
-                st.warning(f"💡 **隔日當沖建議 (綜合準確率: {(f_h1+f_l1)/2:.1f}%)**")
-                d1, d2 = st.columns(2)
-                d1.write(f"🔹 建議買入：**{buy_p:.2f}** ({((buy_p/curr_c)-1)*100:+.2f}%)")
-                d2.write(f"🔸 建議賣出：**{sell_p:.2f}** ({((sell_p/curr_c)-1)*100:+.2f}%)")
-
-                # --- 繪圖 (精簡版，移除星星與走勢路徑) ---
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.plot(df.index[-40:], close.tail(40), label="Price Trend", color='#1f77b4', linewidth=2)
-                
-                ax.axhline(y=p_h5, color='red', linestyle='--', alpha=0.3, label="5D Resistance")
-                ax.axhline(y=p_l5, color='green', linestyle='--', alpha=0.3, label="5D Support")
-                
-                ax.set_title(f"{stock_id} Price Channel", fontsize=14)
-                ax.legend(loc='upper left')
-                st.pyplot(fig)
-                
-                # --- 底部對照註解 ---
-                st.divider()
-                st.subheader("📘 數據詳細說明")
-                st.markdown(f"""
-                **1. 圖表中文對照：**
-                * **Price Trend (藍實線)**：過去 40 天實際收盤價走勢。
-                * **5D Resistance (紅虛線)**：模型預估未來五日波段壓力上限。
-                * **5D Support (綠虛線)**：模型預估未來五日波段支撐下限。
-
-                **2. 為什麼達成率相近？**
-                * 模型基於 **ATR 波動率** 計算震盪區間，對稱性較強。
-                * 在震盪格局中，股價往往會同時觸及壓力與守住支撐。
-                """)
+            elif curr_p < prev_c:
+                # 情況 B：弱勢股 (破平盤)
+                st.error("❄️ **空頭轉弱：不宜進場**")
+                st_low_buy = curr_p - (atr * 0.5)
+                st.write(f"⚠️ **操作警告**：目前股價在平盤以下，翻紅機率低。")
+                st.write(f"💡 **若要低接**：至少等回測至 **{st_low_buy:.2f}** 且出現長下影線。")
+            
             else:
-                st.error("搜尋不到數據。")
+                # 情況 C：盤整
+                st.info("⚖️ **區間震盪：盤整待變**")
+                st.write(f"💡 **操作建議**：在 **{prev_c:.2f}** (平盤) 附近小量試單。")
+
+            # 圖表：今日分鐘線走勢
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(df_1m.index, df_1m['Close'], color='blue', label="1-min Trend")
+            ax.axhline(y=open_p, color='orange', linestyle='--', label="Open")
+            ax.axhline(y=prev_c, color='gray', linestyle='--', label="Prev Close")
+            ax.set_title("Intraday 1-min Chart")
+            ax.legend()
+            st.pyplot(fig)
+
+        else:
+            st.warning("目前非交易時段或無法獲取分鐘數據。")
