@@ -143,75 +143,106 @@ elif st.session_state.mode == "realtime":
     stock_id = st.text_input("輸入股票代碼（如：2330）")
 
     if stock_id:
-        # 抓取數據 (確保 period 足夠計算 ATR)
-        df, sym = fetch_stock_data(stock_id, period="120d")
+        # 1. 抓取數據 (使用較短 period 以獲取更靈敏的即時變動)
+        df, sym = fetch_stock_data(stock_id, period="60d")
         
         if df.empty:
             st.error("❌ 查無資料，請檢查代碼是否正確。")
         else:
-            # 1. 判斷交易時段警示
-            now = datetime.now(tw_tz)
-            is_market_open = now.weekday() < 5 and (9 <= now.hour < 13 or (now.hour == 13 and now.minute <= 30))
-            if not is_market_open:
-                st.warning(f"🕒 【目前未開盤】現在時間 {now.strftime('%H:%M')}。下方建議為基於最後收盤數據之預估。")
-
-            # 2. 數據處理與 FinMind 籌碼邏輯 [2026-01-12 指示]
+            # --- [數據基礎定義] ---
             df = df.ffill()
             name = get_stock_name(stock_id)
             curr_price = float(df['Close'].iloc[-1])
+            prev_close = float(df['Close'].iloc[-2])
             
-            # 計算籌碼偏向 (Institutional Investor Chips)
+            # --- [A. 交易時段判定與標語] ---
+            now = datetime.now(tw_tz)
+            # 判斷週一至週五 09:00 - 13:30
+            is_market_open = now.weekday() < 5 and (9 <= now.hour < 13 or (now.hour == 13 and now.minute <= 30))
+
+            if not is_market_open:
+                st.warning(f"🕒 【目前非交易時段】系統暫停動態演算。現在時間：{now.strftime('%H:%M')}。")
+            else:
+                st.success(f"🟢 【盤中 AI 動態監控中】數據隨量價即時校正。")
+
+            # --- [B. 亮底深字：最新收盤卡片] ---
+            price_diff = curr_price - prev_close
+            active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
+            
+            st.markdown(f"""
+                <style>
+                    @media (max-width: 600px) {{
+                        .main-price {{ font-size: 52px !important; }}
+                        .data-row {{ flex-direction: column !important; gap: 10px !important; }}
+                    }}
+                </style>
+                <div style='background: #FFFFFF; padding: 25px; border-radius: 18px; border-left: 12px solid {active_color}; border: 1px solid #E2E8F0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);'>
+                    <div style='color: #0F172A; font-size: 28px; font-weight: 800;'>{name} <span style='color:gray; font-weight:400;'>({sym})</span></div>
+                    <div style='display: flex; align-items: baseline; flex-wrap: wrap; margin-top:10px;'>
+                        <b class='main-price' style='font-size: 70px; color: {active_color}; line-height: 1;'>{curr_price:.2f}</b>
+                        <div style='margin-left: 15px;'>
+                            <span style='font-size: 28px; color: {active_color}; font-weight: 900; display: block;'>
+                                {'▲' if price_diff >= 0 else '▼'} {abs(price_diff):.2f}
+                            </span>
+                            <span style='font-size: 18px; color: {active_color}; font-weight: 700;'>
+                                ({(price_diff/prev_close*100):.2f}%)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # --- [C. 核心：動態非公式演算邏輯] ---
+            # 1. 波動度：使用最近 20 日/分標準差，反映當下真實震幅
+            recent_std = df['Close'].tail(20).std()
+            
+            # 2. 量能係數：即時成交量與 5 日均量比 [2026-01-12 指示]
             vol_ma5 = df['Volume'].tail(5).mean()
             curr_vol = df['Volume'].iloc[-1]
-            bias = 1.006 if curr_vol > vol_ma5 else 0.994
+            instant_vol_factor = curr_vol / vol_ma5
             
-            # 計算波動慣性 (Volatility Inertia / ATR)
-            tr = np.maximum(df['High'] - df['Low'],
-                            np.maximum(abs(df['High'] - df['Close'].shift(1)),
-                                       abs(df['Low'] - df['Close'].shift(1))))
-            atr = tr.rolling(14).mean().iloc[-1]
+            # 3. 動態點位：量能越大，支撐越下撤(防殺盤)，壓力越上推(看突破)
+            # 徹底捨棄固定 0.35/0.55
+            dynamic_buy = curr_price - (recent_std * (1.2 / instant_vol_factor))
+            dynamic_sell = curr_price + (recent_std * (1.5 * instant_vol_factor))
             
-            # 3. 顯示現價資訊
-            st.markdown(f"<h1 style='color:#000;'>{name} <small style='color:gray;'>({sym})</small></h1>", unsafe_allow_html=True)
-            st.metric("最新成交價", f"{curr_price:.2f}")
+            # 4. 對齊 Tick Size (台積電 5 元規則)
+            tick = get_tick_size(curr_price)
+            buy_point = round(dynamic_buy / tick) * tick
+            sell_target = round(dynamic_sell / tick) * tick
+            expected_return = (sell_target - buy_point) / buy_point * 100
 
-            if np.isnan(atr) or atr == 0:
-                st.warning("⚠️ 數據計算中，請稍候...")
-            else:
-                # 4. 當沖 AI 建議價格
-                buy_price = curr_price - (atr * 0.35 / bias)
-                sell_price = curr_price + (atr * 0.55 * bias)
-                expected_return = (sell_price - buy_price) / buy_price * 100
-
-                st.divider()
-                st.subheader("🎯 當沖 AI 建議點位")
+            # --- [D. 顯示區：盤中動態點位] ---
+            st.divider()
+            if is_market_open:
+                st.subheader("🎯 當沖 AI 動態演算點位")
                 
-                # 判斷風報比是否達標
-                if expected_return < 1.5:
-                    st.warning(f"🚫 預期報酬率僅 {expected_return:.2f}% (低於 1.5%)，今日波動慣性不足，不建議進場。")
-                else:
-                    # 彩色方塊排版
-                    d1, d2, d3 = st.columns(3)
-                    d1.markdown(f"""
-                        <div style="background:#EBF8FF; padding:20px; border-radius:10px; border:1px solid #BEE3F8; text-align:center;">
-                            <b style="color:#2C5282; font-size:18px;">🔹 建議買點</b><br>
-                            <h2 style="color:#2B6CB0; margin:10px 0;">{buy_price:.2f}</h2>
+                # 手機版自動轉直排的佈局
+                d1, d2, d3 = st.columns(3)
+                with d1:
+                    st.markdown(f"""
+                        <div style="background:#F0F9FF; padding:20px; border-radius:12px; border-left:8px solid #3182CE; text-align:center;">
+                            <b style="color:#2C5282; font-size:14px;">🔹 動態支撐買點</b>
+                            <h2 style="color:#1E40AF; margin:10px 0;">{buy_point:.2f}</h2>
                         </div>
                     """, unsafe_allow_html=True)
-                    
-                    d2.markdown(f"""
-                        <div style="background:#FFF5F5; padding:20px; border-radius:10px; border:1px solid #FED7D7; text-align:center;">
-                            <b style="color:#9B2C2C; font-size:18px;">🔴 建議賣點</b><br>
-                            <h2 style="color:#C53030; margin:10px 0;">{sell_price:.2f}</h2>
+                with d2:
+                    st.markdown(f"""
+                        <div style="background:#FFF5F5; padding:20px; border-radius:12px; border-left:8px solid #E53E3E; text-align:center;">
+                            <b style="color:#9B2C2C; font-size:14px;">🔴 動態壓力賣點</b>
+                            <h2 style="color:#991B1B; margin:10px 0;">{sell_target:.2f}</h2>
                         </div>
                     """, unsafe_allow_html=True)
-                    
-                    d3.markdown(f"""
-                        <div style="background:#F0FFF4; padding:20px; border-radius:10px; border:1px solid #C6F6D5; text-align:center;">
-                            <b style="color:#22543D; font-size:18px;">📈 預期報酬</b><br>
-                            <h2 style="color:#38A169; margin:10px 0;">{expected_return:.2f}%</h2>
+                with d3:
+                    st.markdown(f"""
+                        <div style="background:#F0FFF4; padding:20px; border-radius:12px; border-left:8px solid #38A169; text-align:center;">
+                            <b style="color:#22543D; font-size:14px;">📈 預期報酬</b>
+                            <h2 style="color:#2F855A; margin:10px 0;">{expected_return:.2f}%</h2>
                         </div>
                     """, unsafe_allow_html=True)
+                
+                if expected_return < 1.2:
+                    st.info("💡 目前即時波動率極低，建議等待量能噴發後再參考點位。")
 
 elif st.session_state.mode == "forecast":
     
@@ -436,6 +467,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
