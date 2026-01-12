@@ -3,6 +3,8 @@ yfinance
 pandas
 numpy
 matplotlib
+scikit-learn
+pytz
 requests
 FinMind
 tqdm
