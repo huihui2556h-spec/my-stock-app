@@ -95,7 +95,7 @@ if st.session_state.mode == "home":
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
     with col_b:
-        if st.button("📊 深度預估分析", use_container_width=True): navigate_to("forecast")
+        if st.button("📊 明日及波段預估", use_container_width=True): navigate_to("forecast")
 
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -103,4 +103,5 @@ elif st.session_state.mode == "realtime":
     tw_tz = pytz.timezone('Asia/Taipei')
     df_rt, sym_rt = None, None
     stock_id = st.text_input("輸入代碼:")
+
 
