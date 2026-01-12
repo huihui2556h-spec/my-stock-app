@@ -333,21 +333,22 @@ elif st.session_state.mode == "forecast":
                  with note2:
     # 根據命中率(acc_dh)自動生成「信心評論」
     # 這裡使用您之前算好的 acc_dh 作為信心指標
-                  confidence_level = "核心參考" if acc_dh > 85 else "謹慎參考"
+                  confidence_tag = "核心參考" if acc_dh > 85 else "謹慎參考"
     
                   st.markdown(f"""
                   **3. 60日歷史回測精度：** - 本次 AI 預估區間在過去 60 個交易日中，維持了 **{acc_dh:.1f}%** 的命中率。
-                  - 評等為：`{confidence_level}`。 (命中率越高，代表該股越符合波動慣性)
+                  - 評等為：`{confidence_tag}`。 (命中率越高，代表該股越符合波動慣性)
     
                   **4. 隔日空間參考：**
                   - 預計明日波動範圍約在 `{curr_c - atr*0.65/bias:.2f}` 至 `{curr_c + atr*0.85*bias:.2f}` 之間。
                   """)
 
      # 最後放一個會隨股名變動的提醒
-                  st.warning(f"※ 以上數據係基於 {name}({stock_id}) 截至 {current_date} 之最後交易數據計算得出。")
+                  st.caption(f"※ 本分析由 AI 於 {current_date} 根據 {name}({stock_id}) 之最新量價與法人籌碼數據自動生成。")
 
                 
                   st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
