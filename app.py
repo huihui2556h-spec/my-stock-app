@@ -320,13 +320,7 @@ elif st.session_state.mode == "forecast":
                 price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
                 price_change_pct = (curr_c - prev_close) / prev_close * 100
 
-                # --- 3. [頂部核心顯示區] 巨型變色收盤價 ---
-                st.divider()
-                h1, h2 = st.columns([3, 2])
-                with h1:
-                    # 股票名稱
-                    st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
-                    # 收盤價區塊：依昨收價動態變色
+                
                     
                 
 
@@ -442,6 +436,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
