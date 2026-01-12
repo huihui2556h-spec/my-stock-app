@@ -69,32 +69,6 @@ def get_stock_name(stock_id):
     except:
         return f"台股 {stock_id}"
 
-# --- 頂部核心：獨立大字體收盤價與股票名稱 (恢復原色不亂改) ---
-st.divider()
-h1, h2 = st.columns([3, 2])
-
-with h1:
-    # 股票名稱顏色鎖定黑色，不隨意更改
-    st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
-    
-    # 收盤價獨立欄位：恢復 90px 巨型字體與紅色色塊
-    st.markdown(f"""
-        <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>
-            <p style='color:#444; font-size:26px; margin:0;'>最新收盤報價：</p>
-            <b style='font-size:90px; color:#C53030; line-height:1;'>{curr_c:.2f}</b>
-        </div>
-    """, unsafe_allow_html=True)
-
-with h2:
-    # 整合 2026-01-12 指示：籌碼修正 (bias) 與 開盤預估
-    st.info(f"""
-    📊 籌碼修正：{bias:.3f} ({'法人偏多' if bias > 1 else '法人偏空'})
-    
-    🚩 波動慣性：{(df['Close'].pct_change().std()*100):.2f}
-    
-    🌅 預估明日開盤：{est_open:.2f}
-    """)
-
 # --- 抓股價 ---
 @st.cache_data(ttl=3600)
 def fetch_stock_data(stock_id, period="120d"):
@@ -237,6 +211,56 @@ elif st.session_state.mode == "forecast":
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
                 atr = tr.rolling(14).mean().iloc[-1]
                 est_open = curr_c + (atr * 0.05 * bias)
+                vol_inertia = (df['Close'].pct_change().std() * 100)
+
+                # --- 確保這整段都在 if stock_id: 的縮排內 ---
+if stock_id:
+    with st.spinner('執行 AI 籌碼修正與命中率回測...'):
+        df, sym = fetch_stock_data(stock_id)
+        
+        if not df.empty:
+            # [核心計算區] 先定義所有變數，避免 NameError
+            name = get_stock_name(stock_id)
+            df = df.ffill()
+            curr_c = float(df['Close'].iloc[-1])
+            
+            # FinMind 籌碼邏輯
+            chip_score = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
+            bias = 1.006 if chip_score > 1 else 0.994
+            
+            # 波動慣性與開盤預估
+            tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
+            atr = tr.rolling(14).mean().iloc[-1]
+            est_open = curr_c + (atr * 0.05 * bias)
+            vol_inertia = (df['Close'].pct_change().std() * 100)
+
+            # --- 🎯 介面顯示區：獨立大字體收盤價 (完全還原您的排版) ---
+            st.divider()
+            h1, h2 = st.columns([3, 2])
+
+            with h1:
+                # 股票名稱：恢復黑色 60px
+                st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
+                
+                # 收盤價：恢復 90px 巨型字體與紅色色塊
+                st.markdown(f"""
+                    <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>
+                        <p style='color:#444; font-size:26px; margin:0;'>最新收盤報價：</p>
+                        <b style='font-size:90px; color:#C53030; line-height:1;'>{curr_c:.2f}</b>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            with h2:
+                # 整合資訊區：籌碼、慣性、開盤預估
+                st.info(f"""
+                📊 籌碼修正：{bias:.3f} ({'法人偏多' if bias > 1 else '法人偏空'})
+                
+                🚩 波動慣性：{vol_inertia:.2f}
+                
+                🌅 預估明日開盤：{est_open:.2f}
+                """)
+            
+            # --- 後續的壓力支撐卡片請接在此處 ---
 
                 # 計算 60 日真實回測
                 acc_h1 = calculate_real_accuracy(df, 0.85 * bias, 'high')
@@ -286,6 +310,7 @@ elif st.session_state.mode == "forecast":
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
 
 
