@@ -9,6 +9,20 @@ import pytz
 import matplotlib.pyplot as plt
 import matplotlib
 
+st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
+
+# 2. 定義時區，確保日期隨時間自動改變不報錯 [cite: 2026-01-12]
+tw_tz = pytz.timezone("Asia/Taipei")
+
+# 3. 解決圖表亂碼問題 (英文 Legend)
+def set_mpl_font():
+    plt.rcParams['axes.unicode_minus'] = False 
+    # 這裡我們維持使用英文標籤，避免不同系統字體缺失導致的 □□□
+set_mpl_font()
+
+# 4. 初始化 Session State (若尚未初始化)
+if 'mode' not in st.session_state:
+    st.session_state.mode = "home"
 # --- 🎯 修正圖片亂碼：強制手動載入系統字體 ---
 def set_mpl_font():
     # 嘗試多種常見中文字體名稱，確保在不同 OS 都能正常顯示
@@ -352,6 +366,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
