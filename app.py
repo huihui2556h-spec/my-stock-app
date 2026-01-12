@@ -344,10 +344,11 @@ elif st.session_state.mode == "forecast":
                   """)
 
      # 最後放一個會隨股名變動的提醒
-                  st.caption(f"※ 以上數據係基於 {name}({stock_id}) 截至 {current_date} 之最後交易數據計算得出。")
+                  st.warning(f"※ 以上數據係基於 {name}({stock_id}) 截至 {current_date} 之最後交易數據計算得出。")
 
                 
                   st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
