@@ -7,11 +7,11 @@ import requests
 import re
 from datetime import datetime, timedelta
 import pytz
-from FinMind.data import DataLoader 
 
 # 1. 頁面配置
 st.set_page_config(page_title="台股 AI 多因子當沖助手 Pro", layout="centered")
 
+# 初始化 session state
 if 'mode' not in st.session_state:
     st.session_state.mode = "home"
 
@@ -19,203 +19,179 @@ def navigate_to(new_mode):
     st.session_state.mode = new_mode
     st.rerun()
 
-# --- 🧬 外部資料庫：籌碼面分析模組 ---
-def get_external_chip_factor(stock_id):
+# --- 🧬 外部籌碼資料庫：FinMind 整合模組 ---
+def get_institutional_chips(stock_id):
+    """抓取三大法人與融資融券，計算籌碼修正因子"""
     try:
+        from FinMind.data import DataLoader
         dl = DataLoader()
-        # 抓取近 10 天資料以計算近期趨勢
+        # 抓取近 10 天資料
         start_dt = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
         inst_df = dl.taiwan_stock_institutional_investors(stock_id=stock_id, start_date=start_dt)
         margin_df = dl.taiwan_stock_margin_purchase_short_sale(stock_id=stock_id, start_date=start_dt)
         
-        chip_score = 1.0 
+        chip_weight = 1.0 # 初始信心權重
+        
         if not inst_df.empty:
-            recent_inst = inst_df.tail(9) 
-            net_buy = recent_inst['buy'].sum() - recent_inst['sell'].sum()
-            # 法人籌碼惯性修正
-            if net_buy > 0: chip_score += 0.006 
-            else: chip_score -= 0.006
+            # 取最近三日總和，若法人買超則增加權重
+            recent = inst_df.tail(9) 
+            net = recent['buy'].sum() - recent['sell'].sum()
+            if net > 0: chip_weight += 0.008
+            else: chip_weight -= 0.008
             
         if not margin_df.empty:
-            recent_margin = margin_df.tail(3)
-            # 融資減、券增 通常視為籌碼集中
-            if recent_margin['Margin_Purchase_today_balance'].iloc[-1] < recent_margin['Margin_Purchase_today_balance'].iloc[0]:
-                chip_score += 0.003
+            # 融資餘額減少（散戶退場）視為利多
+            m_data = margin_df.tail(3)
+            if m_data['Margin_Purchase_today_balance'].iloc[-1] < m_data['Margin_Purchase_today_balance'].iloc[0]:
+                chip_weight += 0.003
         
-        return chip_score
+        return chip_weight
     except:
-        return 1.0 
+        return 1.0 # 失敗時回傳中性權重，確保程式不崩潰
 
-# --- 🧠 AI 動態特徵預測核心 (考慮波動慣性與法人籌碼) ---
-def ai_dynamic_forecast(df, chip_factor=1.0):
+# --- 🧠 AI 動態特徵預測 (結合 波動慣性 + 法人籌碼) ---
+def ai_dynamic_forecast(df, chip_f=1.0):
     try:
+        # 學習該股近 60 日「盤中高低點」相對於「昨日收盤價」的分佈
         df_clean = df.tail(60).copy()
         df_clean['h_pct'] = (df_clean['High'] - df_clean['Close'].shift(1)) / df_clean['Close'].shift(1)
         df_clean['l_pct'] = (df_clean['Low'] - df_clean['Close'].shift(1)) / df_clean['Close'].shift(1)
         
-        # 學習各股特有分位數波動 + 籌碼校正
-        h1_dynamic = df_clean['h_pct'].quantile(0.75) * chip_factor
-        h5_dynamic = df_clean['h_pct'].quantile(0.95) * chip_factor
-        l1_dynamic = df_clean['l_pct'].quantile(0.25) / chip_factor
-        l5_dynamic = df_clean['l_pct'].quantile(0.05) / chip_factor
+        # 使用分位數計算專屬波動區間，並乘上籌碼因子
+        h1_p = df_clean['h_pct'].quantile(0.75) * chip_f
+        h5_p = df_clean['h_pct'].quantile(0.95) * chip_f
+        l1_p = df_clean['l_pct'].quantile(0.25) / chip_f
+        l5_p = df_clean['l_pct'].quantile(0.05) / chip_f
         
-        return h1_dynamic, h5_dynamic, l1_dynamic, l5_dynamic
+        return h1_p, h5_p, l1_p, l5_p
     except:
         return 0.02, 0.05, -0.015, -0.04
 
-def calculate_real_accuracy(df, target_pct, side='high'):
+def calculate_real_accuracy(df, target_p, side='high'):
     try:
-        df_copy = df.copy().tail(60)
+        df_c = df.copy().tail(60)
         hits = 0
-        for i in range(1, len(df_copy)):
-            prev_c = df_copy['Close'].iloc[i-1]
-            actual_val = df_copy['High'].iloc[i] if side == 'high' else df_copy['Low'].iloc[i]
-            pred_val = prev_c * (1 + target_pct)
-            if side == 'high' and actual_val >= pred_val: hits += 1
-            elif side == 'low' and actual_val <= pred_val: hits += 1
-        return (hits / len(df_copy)) * 100
+        for i in range(1, len(df_c)):
+            prev_c = df_c['Close'].iloc[i-1]
+            actual = df_c['High'].iloc[i] if side == 'high' else df_c['Low'].iloc[i]
+            pred = prev_c * (1 + target_p)
+            if side == 'high' and actual >= pred: hits += 1
+            elif side == 'low' and actual <= pred: hits += 1
+        return (hits / len(df_c)) * 100
     except: return 0.0
 
-def get_stock_name(stock_id):
-    headers = {'User-Agent': 'Mozilla/5.0'}
+def get_stock_name(sid):
     try:
-        url = f"https://tw.stock.yahoo.com/quote/{stock_id}"
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(f"https://tw.stock.yahoo.com/quote/{sid}", timeout=5)
         name = re.search(r'<title>(.*?) \(', res.text).group(1)
         return name.split('-')[0].strip()
-    except: return f"股票 {stock_id}"
+    except: return f"股票 {sid}"
 
-# --- 🎨 視覺組件 (保留原本紅綠設計) ---
-def stock_box(label, price, pct, acc, color_type="red"):
-    bg_color = "#FF4B4B" if color_type == "red" else "#28A745"
+def render_box(label, price, pct, acc, color="red"):
+    c_code = "#FF4B4B" if color == "red" else "#28A745"
     st.markdown(f"""
-        <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {bg_color}; margin-bottom: 10px;">
+        <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {c_code}; margin-bottom: 10px;">
             <p style="margin:0; font-size:14px; color:#555;">{label}</p>
             <h2 style="margin:0; padding:5px 0; color:#333;">{price:.2f}</h2>
-            <span style="background-color:{bg_color}; color:white; padding:2px 8px; border-radius:5px; font-size:13px;">
+            <span style="background-color:{c_code}; color:white; padding:2px 8px; border-radius:5px; font-size:13px;">
                 預估振幅：{pct:.2f}%
             </span>
             <p style="margin-top:10px; font-size:11px; color:#888;">↳ 歷史特徵達成率：<b>{acc:.2f}%</b></p>
         </div>
     """, unsafe_allow_html=True)
 
-# --- 主程式控制 ---
+# --- 🚀 頁面路由 ---
 if st.session_state.mode == "home":
     st.title("⚖️ 台股 AI 多因子交易系統")
-    col_a, col_b = st.columns(2)
-    with col_a:
+    c1, c2 = st.columns(2)
+    with c1:
         if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
-    with col_b:
+    with c2:
         if st.button("📊 隔日深度預估", use_container_width=True): navigate_to("forecast")
 
 # =========================================================
-# ⚡ 盤中即時 (保留重整功能)
+# ⚡ 盤中即時
 # =========================================================
 elif st.session_state.mode == "realtime":
-    if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    header_col, refresh_col = st.columns([4, 1.2])
-    with header_col: st.title("⚡ 盤中動態決策")
-    with refresh_col:
-        st.write("") 
-        if st.button("🔄 點擊重整", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    if st.sidebar.button("⬅️ 返回"): navigate_to("home")
+    col_h, col_r = st.columns([4, 1.2])
+    col_h.title("⚡ 盤中動態決策")
+    if col_r.button("🔄 點擊重整", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-    stock_id = st.text_input("輸入代碼:", key="rt_id_input")
-    if stock_id:
+    sid_rt = st.text_input("輸入代碼:", key="rt_id_unique")
+    if sid_rt:
         success = False
-        for suffix in [".TW", ".TWO"]:
-            symbol = f"{stock_id}{suffix}"
-            df_rt = yf.download(symbol, period="1d", interval="1m", progress=False)
+        for suf in [".TW", ".TWO"]:
+            df_rt = yf.download(f"{sid_rt}{suf}", period="1d", interval="1m", progress=False)
             if not df_rt.empty:
-                success = True
-                break
-        
+                success = True; break
         if success:
             if isinstance(df_rt.columns, pd.MultiIndex): df_rt.columns = df_rt.columns.get_level_values(0)
             df_rt['VWAP'] = (df_rt['Close'] * df_rt['Volume']).cumsum() / df_rt['Volume'].cumsum()
-            curr_p = float(df_rt['Close'].iloc[-1])
-            vwap_p = float(df_rt['VWAP'].iloc[-1])
-            st.subheader(f"🎯 {get_stock_name(stock_id)}")
-            st.metric("即時現價", f"{curr_p:.2f}")
-            
-            st.divider()
-            c1, c2 = st.columns(2)
-            c1.success(f"🔹 即時支撐 (VWAP)：{vwap_p:.2f}")
-            c2.error(f"🔸 即時分批停利：{curr_p * 1.015:.2f}")
-        else:
-            st.warning("⚠️ 查無即時資料。")
+            cp = float(df_rt['Close'].iloc[-1])
+            vp = float(df_rt['VWAP'].iloc[-1])
+            st.subheader(f"🎯 {get_stock_name(sid_rt)}")
+            st.metric("即時現價", f"{cp:.2f}")
+            st.success(f"🔹 即時支撐 (VWAP)：{vp:.2f}")
+            st.error(f"🔸 即時建議停利：{cp * 1.015:.2f}")
+        else: st.warning("目前無即時資料。")
 
 # =========================================================
-# 📊 隔日深度預估 (完整包含五日預測 + 籌碼因子)
+# 📊 隔日深度預估 (整合價量惯性 + 法人籌碼)
 # =========================================================
 elif st.session_state.mode == "forecast":
-    if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
+    if st.sidebar.button("⬅️ 返回"): navigate_to("home")
     st.title("📊 隔日多因子 AI 預判")
-    stock_id = st.text_input("輸入代碼:", key="fc_id_input")
-    if stock_id:
-        with st.spinner('正在分析各股波動慣性與法人籌碼...'):
+    sid_fc = st.text_input("輸入代碼:", key="fc_id_unique")
+    if sid_fc:
+        with st.spinner('AI 正在分析波動慣性與法人籌碼數據...'):
             success = False
-            for suffix in [".TW", ".TWO"]:
-                symbol = f"{stock_id}{suffix}"
-                df = yf.download(symbol, period="100d", progress=False)
+            for suf in [".TW", ".TWO"]:
+                df = yf.download(f"{sid_fc}{suf}", period="100d", progress=False)
                 if not df.empty:
-                    success = True
-                    break
+                    success = True; break
             
             if success:
                 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                 df = df.ffill()
-                curr_c = float(df['Close'].iloc[-1])
+                curr_close = float(df['Close'].iloc[-1])
                 
-                # 1. 籌碼因子校正
-                chip_f = get_external_chip_factor(stock_id)
+                # 1. 獲取法人籌碼權重 (FinMind)
+                c_weight = get_institutional_chips(sid_fc)
                 
-                # 2. AI 特徵預測 (包含五日最高低)
-                h1_p, h5_p, l1_p, l5_p = ai_dynamic_forecast(df, chip_factor=chip_f)
+                # 2. AI 動態預測 (考慮惯性與籌碼)
+                h1, h5, l1, l5 = ai_dynamic_forecast(df, chip_f=c_weight)
                 
-                # 點位計算
-                p_h1, p_h5 = curr_c * (1 + h1_p), curr_c * (1 + h5_p)
-                p_l1, p_l5 = curr_c * (1 + l1_p), curr_c * (1 + l5_p)
-                
-                # 達成率回測
-                acc_h1 = calculate_real_accuracy(df, h1_p, 'high')
-                acc_h5 = calculate_real_accuracy(df, h5_p, 'high')
-                acc_l1 = calculate_real_accuracy(df, l1_p, 'low')
-                acc_l5 = calculate_real_accuracy(df, l5_p, 'low')
+                ph1, ph5 = curr_close*(1+h1), curr_close*(1+h5)
+                pl1, pl5 = curr_close*(1+l1), curr_close*(1+l5)
 
-                st.subheader(f"🏠 {get_stock_name(stock_id)}")
-                st.metric("最新收盤價", f"{curr_c:.2f}")
+                st.subheader(f"🏠 {get_stock_name(sid_fc)}")
+                st.metric("最新收盤價", f"{curr_close:.2f}")
                 
-                # 顯示籌碼信心
-                status = "🔥 籌碼強勢 (法人買超)" if chip_f > 1.0 else "❄️ 籌碼中性/弱勢"
-                st.write(f"**AI 綜合分析：{status} (修正因子: {chip_f:.3f})**")
+                status_text = "🔥 籌碼偏多 (法人連買)" if c_weight > 1 else "❄️ 籌碼平淡/偏弱"
+                st.info(f"**AI 綜合診斷：{status_text} (信心係數: {c_weight:.3f})**")
                 
                 st.divider()
-                col1, col2 = st.columns(2)
-                with col1:
-                    stock_box("📈 隔日最高預估", p_h1, h1_p*100, acc_h1, "red")
-                    stock_box("🚩 五日最高預估", p_h5, h5_p*100, acc_h5, "red")
-                with col2:
-                    stock_box("📉 隔日最低預估", p_l1, l1_p*100, acc_l1, "green")
-                    stock_box("⚓ 五日最低預估", p_l5, l5_p*100, acc_l5, "green")
+                cola, colb = st.columns(2)
+                with cola:
+                    render_box("📈 隔日最高預估", ph1, h1*100, calculate_real_accuracy(df, h1, 'high'), "red")
+                    render_box("🚩 五日最高預估", ph5, h5*100, calculate_real_accuracy(df, h5, 'high'), "red")
+                with colb:
+                    render_box("📉 隔日最低預估", pl1, l1*100, calculate_real_accuracy(df, l1, 'low'), "green")
+                    render_box("⚓ 五日最低預估", pl5, l5*100, calculate_real_accuracy(df, l5, 'low'), "green")
 
-                # 圖表
-                st.divider()
-                st.write("### 📉 歷史走勢與量價動能")
+                # 歷史圖表
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [2.5, 1]})
                 ax1.plot(df.index[-40:], df['Close'].tail(40), color='#1f77b4', lw=2)
-                ax1.axhline(y=p_h1, color='red', ls='--', alpha=0.4, label="AI Resistance")
-                ax1.axhline(y=p_l1, color='green', ls='--', alpha=0.4, label="AI Support")
+                ax1.axhline(y=ph1, color='red', ls='--', alpha=0.4, label="AI Resistance")
+                ax1.axhline(y=pl1, color='green', ls='--', alpha=0.4, label="AI Support")
                 ax1.legend()
                 
-                plot_df = df.tail(40)
-                colors = ['red' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
-                ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.6)
+                pdf = df.tail(40)
+                clrs = ['red' if pdf['Close'].iloc[i] >= pdf['Open'].iloc[i] else 'green' for i in range(len(pdf))]
+                ax2.bar(pdf.index, pdf['Volume'], color=clrs, alpha=0.6)
                 st.pyplot(fig)
-
-                st.info("📘 **多因子 AI 說明**")
-                st.markdown("""
-                * **五日預估**：基於該股 95% 波動分位數與籌碼權重，預測未來一週可能的極端價格區間。
-                * **籌碼修正**：自動考慮 **FinMind** 提供之法人買賣超與融資數據，動態調整支撐壓力位。
-                """)
+                
+                st.info("📘 **AI 預測邏輯**：系統已自動加入 FinMind 籌碼模組，將法人買賣超與融資數據轉化為信心權重，校正波動慣性模型。")
