@@ -310,44 +310,45 @@ elif st.session_state.mode == "forecast":
 
                 with note_col1:
     # 根據 bias (籌碼修正) 與 漲跌幅 自動生成文字內容
-                if daily_change_pct > 7 and bias > 1.05:
+                 if daily_change_pct > 7 and bias > 1.05:
                   status_text = "🔥 強勢攻擊盤 (帶量噴發)"
                   status_desc = "今日漲幅極大且帶量，慣性已突破 ATR 常態區間。壓力位僅供參考。"
-                elif daily_change_pct < -7 and bias > 1.05:
+                 elif daily_change_pct < -7 and bias > 1.05:
                   status_text = "❄️ 恐慌下跌盤 (放量殺低)"
                   status_desc = "偵測到過度下跌因素，下跌慣性強烈。支撐位可能失守，請謹慎接刀。"
-                else:
+                 else:
                   status_text = "帶量擴張" if bias > 1 else "量縮盤整"
                   status_desc = f"目前籌碼修正係數為 {bias:.3f}，AI 已自動調整預估區間。"
 
-                st.markdown(f"""
-                **1. 籌碼與盤態判斷：**
-                - 今日盤態：**{status_text}**
-                - 說明：{status_desc}
+                  st.markdown(f"""
+                  **1. 籌碼與盤態判斷：**
+                  - 今日盤態：**{status_text}**
+                  - 說明：{status_desc}
     
-                **2. 價格波動慣性：**
-                - 14 日 ATR 波動均幅：`{atr:.2f}`
-                - 預估明日開盤慣性：`{est_open:.2f}` (此數值會隨每日數據自動重算)
-                """)
+                  **2. 價格波動慣性：**
+                  - 14 日 ATR 波動均幅：`{atr:.2f}`
+                  - 預估明日開盤慣性：`{est_open:.2f}` (此數值會隨每日數據自動重算)
+                  """)
 
-                with note_col2:
+                 with note_col2:
     # 根據命中率(acc_dh)自動生成「信心評論」
     # 這裡使用您之前算好的 acc_dh 作為信心指標
-                 confidence_level = "核心參考" if acc_dh > 85 else "謹慎參考"
+                  confidence_level = "核心參考" if acc_dh > 85 else "謹慎參考"
     
-                 st.markdown(f"""
-                 **3. 60日歷史回測精度：** - 本次 AI 預估區間在過去 60 個交易日中，維持了 **{acc_dh:.1f}%** 的命中率。
-                 - 評等為：`{confidence_level}`。 (命中率越高，代表該股越符合波動慣性)
+                  st.markdown(f"""
+                  **3. 60日歷史回測精度：** - 本次 AI 預估區間在過去 60 個交易日中，維持了 **{acc_dh:.1f}%** 的命中率。
+                  - 評等為：`{confidence_level}`。 (命中率越高，代表該股越符合波動慣性)
     
-                 **4. 隔日空間參考：**
-                 - 預計明日波動範圍約在 `{curr_c - atr*0.65/bias:.2f}` 至 `{curr_c + atr*0.85*bias:.2f}` 之間。
-                 """)
+                  **4. 隔日空間參考：**
+                  - 預計明日波動範圍約在 `{curr_c - atr*0.65/bias:.2f}` 至 `{curr_c + atr*0.85*bias:.2f}` 之間。
+                  """)
 
      # 最後放一個會隨股名變動的提醒
-                 st.caption(f"※ 以上數據係基於 {name}({stock_id}) 截至 {current_date} 之最後交易數據計算得出。")
+                  st.caption(f"※ 以上數據係基於 {name}({stock_id}) 截至 {current_date} 之最後交易數據計算得出。")
 
                 
-                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+                  st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
