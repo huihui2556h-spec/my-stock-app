@@ -268,27 +268,55 @@ elif st.session_state.mode == "forecast":
                 with d3:
                     st.markdown(f'<div style="background:#F0FFF4; padding:20px; border-radius:10px; border: 1px solid #C6F6D5; text-align:center;"><b style="color:#22543D;">🔸 短線獲利</b><br><h2 style="color:#38A169; margin:10px 0;">{curr_c + (atr * 0.75):.2f}</h2></div>', unsafe_allow_html=True)
 
-                # --- 5. [走勢圖區] 修正註解與亂碼 ---
+               # --- 📈 走勢圖與 AI 預估區間 ---
                 st.divider()
                 st.markdown(f"### 📈 {name}({sym}) 走勢圖與 AI 預估區間")
+                
+                # 建立畫布
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), gridspec_kw={'height_ratios': [3, 1]}, sharex=True)
                 plot_df = df.tail(45)
                 
-                ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=3, label="收盤價")
-                ax1.axhline(curr_c + atr * 1.9 * bias, color='red', ls='--', lw=2, alpha=0.7, label="五日壓力")
-                ax1.axhline(curr_c - atr * 1.6 / bias, color='green', ls='--', lw=2, alpha=0.7, label="五日支撐")
+                # 價格圖：顯示英文標籤避免亂碼
+                ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=3, label="Close Price")
+                ax1.axhline(curr_c + atr * 1.9 * bias, color='red', ls='--', lw=2, alpha=0.7, label="5D Resistance")
+                ax1.axhline(curr_c - atr * 1.6 / bias, color='green', ls='--', lw=2, alpha=0.7, label="5D Support")
+                
                 ax1.legend(loc='upper left', frameon=True, fontsize=10)
                 ax1.grid(alpha=0.3)
+                ax1.set_ylabel("Price")
                 
+                # 成交量柱狀圖
                 v_colors = ['#EF5350' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else '#26A69A' for i in range(len(plot_df))]
                 ax2.bar(plot_df.index, plot_df['Volume'], color=v_colors, alpha=0.8)
+                ax2.set_ylabel("Volume")
                 
                 plt.tight_layout()
                 st.pyplot(fig)
-                st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間區間。")
-            else:
-                st.error("❌ 查無資料，請確認代碼。")
-            
+
+                # --- 🎯 補充說明註解 (根據您的指示強化) ---
+                st.info(f"💡 **AI 預估模型深度解析：**")
+                
+                # 使用 columns 讓註解排版更專業
+                note1, note2 = st.columns(2)
+                with note1:
+                    st.markdown(f"""
+                    **1. 籌碼修正因子 (Bias)：** 根據最新成交量對比 5 日均量計算出為 `{bias:.3f}`。  
+                    ↳ {'🟢 法人籌碼帶量進場，預估慣性向上調升。' if bias > 1 else '🔴 成交量萎縮或偏空，預估空間向下修正。'} [cite: 2026-01-12]
+                    
+                    **2. 波動慣性 (Volatility)：** 當前 14 日 ATR 波動率為 `{atr:.2f}`。  
+                    ↳ 預估明日開盤價為 `{est_open:.2f}`，此數值已考慮籌碼修正與波動慣性。 [cite: 2026-01-12]
+                    """)
+
+                with note2:
+                    st.markdown(f"""
+                    **3. 60 日回測命中率：** 上方卡片顯示之 `%` 為過去 60 個交易日，價格是否成功維持在 AI 預估區間內的真實命中率。 [cite: 2026-01-12]
+                    
+                    **4. 操作建議：** - 當命中率 > 85% 時，支撐與壓力位具備極高參考價值。
+                    - 若波動慣性驟升，應注意區間突破之風險。
+                    """)
+                
+                st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
