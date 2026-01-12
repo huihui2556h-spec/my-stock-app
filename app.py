@@ -358,77 +358,75 @@ elif st.session_state.mode == "forecast":
                 price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
                 price_change_pct = (curr_c - prev_close) / prev_close * 100
 
-               # --- [1. 機器學習個別回測：縮短至一個月] ---
+               # --- [1. 機器學習個別回測：縮短至一個月數據優化版] ---
                 from sklearn.linear_model import LinearRegression
                 from sklearn.preprocessing import StandardScaler
                 from sklearn.metrics import r2_score, mean_absolute_error
 
-                # 僅取最近 30 筆資料 (約一個月的交易日)
+                # 僅取最近 30 筆資料 (約一個月)
                 df_ml = df.tail(30).copy() 
                 df_ml['Next_High'] = df_ml['High'].shift(-1)
                 df_ml = df_ml.dropna()
 
-                if len(df_ml) > 10: # 確保至少有兩週數據可供回測
-                 features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
-                 X_ml = df_ml[features_ml]
-                 y_ml = df_ml['Next_High']
+                if len(df_ml) > 10: 
+                    features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    X_ml = df_ml[features_ml]
+                    y_ml = df_ml['Next_High']
 
-                # 個別化回測判定 (80/20 切割)
-                 split_ml = int(len(X_ml) * 0.8)
-                 X_train, X_test = X_ml[:split_ml], X_ml[split_ml:]
-                 y_train, y_test = y_ml[:split_ml], y_ml[split_ml:]
+                    # 建立標準化工具
+                    scaler_ml = StandardScaler()
+                    # 關鍵：定義 X_scaled
+                    X_scaled = scaler_ml.fit_transform(X_ml)
+                    
+                    # 訓練模型
+                    model_ml = LinearRegression()
+                    model_ml.fit(X_scaled, y_ml)
 
-                 scaler_ml = StandardScaler()
-                 X_train_scaled = scaler_ml.fit_transform(X_ml)
-                
+                    # 計算這一個月內的回測準確度
+                    y_pred = model_ml.predict(X_scaled)
+                    stock_r2 = r2_score(y_ml, y_pred)
+                    stock_mae = mean_absolute_error(y_ml, y_pred)
 
-                 model_ml = LinearRegression()
-                 model_ml.fit(X_train_scaled, y_ml)
-
-                # 計算該標的的專屬信心度
-                 y_pred = model_ml.predict(X_scaled)
-                 stock_r2 = r2_score(y_ml, y_pred)
-                 stock_mae = mean_absolute_error(y_ml, y_pred)
-
-                # 預測明日最高價並修正 Tick
-                 latest_scaled = scaler_ml.transform(df[features_ml].tail(1))
-                 ml_tomorrow_high = model_ml.predict(latest_scaled)[0]
-                 ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
-
-                # 計算 ML 預估的上漲空間
-                 ml_upside = ((ml_tomorrow_high / curr_c) - 1) * 100
+                    # 預測明日最高價 (使用最後一天的數據)
+                    latest_data = df[features_ml].tail(1)
+                    latest_scaled = scaler_ml.transform(latest_data)
+                    ml_tomorrow_high = model_ml.predict(latest_scaled)[0]
+                    
+                    # 對齊台股跳動單位
+                    ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
+                    ml_upside = ((ml_tomorrow_high / curr_c) - 1) * 100
 
                 # --- [顯示：機器學習個別標定報告 (亮底深字)] ---
-                 clean_name = name.split('(')[0].split('-')[0].strip()
-                 st.markdown(f"### 🤖 {clean_name} 的專屬 AI 機器學習回測")
-                 r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
-                 r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
+                    clean_name = name.split('(')[0].split('-')[0].strip()
+                    st.markdown(f"### 🤖 {clean_name} 的專屬 AI 機器學習回測")
+                    r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
+                    r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
 
-                 mc1, mc2, mc3 = st.columns(3)
-                with mc1:
-                    st.markdown(f"""
+                    mc1, mc2, mc3 = st.columns(3)
+                    with mc1:
+                     st.markdown(f"""
                         <div style="background:#FFFBEB; padding:20px; border-radius:12px; border:1px solid #FEF3C7; text-align:center;">
                             <b style="color:#92400E; font-size:14px;">🎯 ML 預估最高價</b>
                             <h2 style="color:#78350F; margin:10px 0;">{ml_tomorrow_high:.2f}</h2>
                             <small style="color:#B45309;">預期空間: {ml_upside:.2f}%</small>
                         </div>
                     """, unsafe_allow_html=True)
-                with mc2:
-                    st.markdown(f"""
+                    with mc2:
+                     st.markdown(f"""
                         <div style="background:#ECFDF5; padding:20px; border-radius:12px; border:1px solid #D1FAE5; text-align:center;">
                             <b style="color:#065F46; font-size:14px;">📈 預測信心度 (R2)</b>
                             <h2 style="color:{r2_color}; margin:10px 0;">{stock_r2:.4f}</h2>
                             <small style="color:#059669;">準確度評價：{r2_eval}</small>
                         </div>
                     """, unsafe_allow_html=True)
-                with mc3:
-                    st.markdown(f"""
+                    with mc3:
+                     st.markdown(f"""
                         <div style="background:#FDF2F2; padding:20px; border-radius:12px; border:1px solid #FEE2E2; text-align:center;">
                             <b style="color:#9B1C1C; font-size:14px;">📏 平均預估誤差</b>
                             <h2 style="color:#AF1919; margin:10px 0;">±{stock_mae:.2f}</h2>
                             <small style="color:#C81E1E;">歷史平均偏離值</small>
                         </div>
-                    """, unsafe_allow_html=True)
+                      """, unsafe_allow_html=True)
 
                 
                     
@@ -546,6 +544,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
