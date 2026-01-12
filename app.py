@@ -368,43 +368,43 @@ elif st.session_state.mode == "forecast":
                 df_ml['Next_High'] = df_ml['High'].shift(-1)
                 df_ml = df_ml.dropna()
 
-            if len(df_ml) > 10: # 確保至少有兩週數據可供回測
-                features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
-                X_ml = df_ml[features_ml]
-                y_ml = df_ml['Next_High']
+                if len(df_ml) > 10: # 確保至少有兩週數據可供回測
+                 features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
+                 X_ml = df_ml[features_ml]
+                 y_ml = df_ml['Next_High']
 
                 # 個別化回測判定 (80/20 切割)
-                split_ml = int(len(X_ml) * 0.8)
-                X_train, X_test = X_ml[:split_ml], X_ml[split_ml:]
-                y_train, y_test = y_ml[:split_ml], y_ml[split_ml:]
+                 split_ml = int(len(X_ml) * 0.8)
+                 X_train, X_test = X_ml[:split_ml], X_ml[split_ml:]
+                 y_train, y_test = y_ml[:split_ml], y_ml[split_ml:]
 
-                scaler_ml = StandardScaler()
-                X_train_scaled = scaler_ml.fit_transform(X_ml)
+                 scaler_ml = StandardScaler()
+                 X_train_scaled = scaler_ml.fit_transform(X_ml)
                 
 
-                model_ml = LinearRegression()
-                model_ml.fit(X_train_scaled, y_ml)
+                 model_ml = LinearRegression()
+                 model_ml.fit(X_train_scaled, y_ml)
 
                 # 計算該標的的專屬信心度
-                y_pred = model_ml.predict(X_scaled)
-                stock_r2 = r2_score(y_ml, y_pred)
-                stock_mae = mean_absolute_error(y_ml, y_pred)
+                 y_pred = model_ml.predict(X_scaled)
+                 stock_r2 = r2_score(y_ml, y_pred)
+                 stock_mae = mean_absolute_error(y_ml, y_pred)
 
                 # 預測明日最高價並修正 Tick
-                latest_scaled = scaler_ml.transform(df[features_ml].tail(1))
-                ml_tomorrow_high = model_ml.predict(latest_scaled)[0]
-                ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
+                 latest_scaled = scaler_ml.transform(df[features_ml].tail(1))
+                 ml_tomorrow_high = model_ml.predict(latest_scaled)[0]
+                 ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
 
                 # 計算 ML 預估的上漲空間
-                ml_upside = ((ml_tomorrow_high / curr_c) - 1) * 100
+                 ml_upside = ((ml_tomorrow_high / curr_c) - 1) * 100
 
                 # --- [顯示：機器學習個別標定報告 (亮底深字)] ---
-                clean_name = name.split('(')[0].split('-')[0].strip()
-                st.markdown(f"### 🤖 {clean_name} 的專屬 AI 機器學習回測")
-                r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
-                r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
+                 clean_name = name.split('(')[0].split('-')[0].strip()
+                 st.markdown(f"### 🤖 {clean_name} 的專屬 AI 機器學習回測")
+                 r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
+                 r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
 
-                mc1, mc2, mc3 = st.columns(3)
+                 mc1, mc2, mc3 = st.columns(3)
                 with mc1:
                     st.markdown(f"""
                         <div style="background:#FFFBEB; padding:20px; border-radius:12px; border:1px solid #FEF3C7; text-align:center;">
@@ -546,6 +546,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
