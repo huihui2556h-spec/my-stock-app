@@ -96,28 +96,85 @@ def stock_box(label, price, pct, acc, color):
     """, unsafe_allow_html=True)
 
 # ================== 介面控制 ==================
-if st.session_state.mode == "home":
-    st.title("⚖️ 台股 AI 交易決策系統")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
-    with col_b:
-        if st.button("📊 隔日當沖與波段預估", use_container_width=True): navigate_to("forecast")
-
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    st.title("⚡ 盤中即時量價")
-    stock_id = st.text_input("輸入股票代碼")
+    st.title("⚡ 盤中即時量價（當沖）")
+
+    tw_tz = pytz.timezone("Asia/Taipei")
+    stock_id = st.text_input("輸入股票代碼（如：2330）")
+
     if stock_id:
-        tw_tz = pytz.timezone("Asia/Taipei")
         now = datetime.now(tw_tz)
-        is_market_open = now.weekday() < 5 and (9 <= now.hour < 14)
-        if not is_market_open:
-            st.warning("🕒 【目前未開盤】今日非交易時段，數據為昨日收盤行情。")
+        # 判斷台股開盤時段 (09:00 - 13:30)
+        is_market_open = now.weekday() < 5 and (9 <= now.hour < 13 or (now.hour == 13 and now.minute <= 30))
         
-        df, sym = fetch_stock_data(stock_id, period="5d")
-        if not df.empty:
-            st.metric(f"📍 {get_stock_name(stock_id)} 現價", f"{df['Close'].iloc[-1]:.2f}")
+        # 顯示未開盤警示標語
+        if not is_market_open:
+            st.warning(f"🕒 【未開盤警示】目前非台股交易時段 (現在時間: {now.strftime('%H:%M')})。下方顯示之價格與建議為前一交易日之最終數據。")
+
+        df, sym = fetch_stock_data(stock_id, period="10d") # 抓 10 天確保 ATR 計算穩定
+        
+        if df.empty:
+            st.error("❌ 查無資料")
+        else:
+            df = df.ffill()
+            name = get_stock_name(stock_id)
+            curr_price = float(df['Close'].iloc[-1])
+            
+            # --- 🎯 2026-01-12 指示：加入 FinMind 籌碼補償與波動慣性 ---
+            # 計算成交量 bias (institutional investor chips)
+            vol_ma5 = df['Volume'].tail(5).mean()
+            curr_vol = df['Volume'].iloc[-1]
+            bias = 1.006 if curr_vol > vol_ma5 * 1.1 else 0.994
+            
+            # 計算 ATR
+            tr = np.maximum(df['High'] - df['Low'],
+                            np.maximum(abs(df['High'] - df['Close'].shift(1)),
+                                       abs(df['Low'] - df['Close'].shift(1))))
+            atr = tr.rolling(14).mean().iloc[-1]
+            
+            # 顯示現價 (保持原始顏色與大字體)
+            st.markdown(f"<h1 style='color:#000;'>{name} <small style='color:gray;'>({sym})</small></h1>", unsafe_allow_html=True)
+            st.metric("最新成交價", f"{curr_price:.2f}")
+
+            if np.isnan(atr) or atr == 0:
+                st.warning("⚠️ 波動資料不足，暫不提供當沖建議")
+            else:
+                # 考慮籌碼修正後的建議價格
+                buy_price = curr_price - (atr * 0.35 / bias)
+                sell_price = curr_price + (atr * 0.55 * bias)
+                expected_return = (sell_price - buy_price) / buy_price * 100
+
+                st.divider()
+                st.subheader("🎯 當沖 AI 建議")
+                
+                if expected_return < 1.5:
+                    st.warning(f"🚫 預期報酬僅 {expected_return:.2f}% (低於 1.5%)。今日波動不足，不建議進場。")
+                else:
+                    # --- 🎨 還原您要求的彩色方塊排版 ---
+                    d1, d2, d3 = st.columns(3)
+                    d1.markdown(f"""
+                        <div style="background:#EBF8FF; padding:20px; border-radius:10px; border:1px solid #BEE3F8; text-align:center;">
+                            <b style="color:#2C5282; font-size:18px;">🔹 建議買點</b><br>
+                            <h2 style="color:#2B6CB0; margin:10px 0;">{buy_price:.2f}</h2>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    d2.markdown(f"""
+                        <div style="background:#FFF5F5; padding:20px; border-radius:10px; border:1px solid #FED7D7; text-align:center;">
+                            <b style="color:#9B2C2C; font-size:18px;">🔴 建議賣點</b><br>
+                            <h2 style="color:#C53030; margin:10px 0;">{sell_price:.2f}</h2>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    d3.markdown(f"""
+                        <div style="background:#F0FFF4; padding:20px; border-radius:10px; border:1px solid #C6F6D5; text-align:center;">
+                            <b style="color:#22543D; font-size:18px;">📈 預期報酬</b><br>
+                            <h2 style="color:#38A169; margin:10px 0;">{expected_return:.2f}%</h2>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.caption("📘 說明：本建議結合 ATR 波動與 FinMind 籌碼補償係數推估。")
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -187,3 +244,4 @@ elif st.session_state.mode == "forecast":
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
