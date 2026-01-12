@@ -211,25 +211,7 @@ elif st.session_state.mode == "forecast":
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
                 atr = tr.rolling(14).mean().iloc[-1]
                 est_open = curr_c + (atr * 0.05 * bias)
-                vol_inertia = (df['Close'].pct_change().std() * 100)
-
-                st.divider()
-                h1, h2 = st.columns([3, 2])
-                with h1:
-                    st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
-                    st.markdown(f"""
-                        <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>
-                            <p style='color:#444; font-size:26px; margin:0;'>最新收盤報價：</p>
-                            <b style='font-size:90px; color:#C53030; line-height:1;'>{curr_c:.2f}</b>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                with h2:
-                    st.info(f"📊 籌碼修正：{bias:.3f} ({'法人偏多' if bias > 1 else '法人偏空'})\n\n🚩 波動慣性：{vol_inertia:.2f}\n\n🌅 預估明日開盤：{est_open:.2f}")
-
-                # --- [接下來放壓力支撐卡片 stock_box] ---
-                st.divider()
-                c1, c2 = st.columns(2)
+              
 
                 # --- 確保這整段都在 if stock_id: 的縮排內 ---
 if stock_id:
@@ -328,6 +310,7 @@ if stock_id:
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
 
 
