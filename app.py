@@ -351,7 +351,8 @@ elif st.session_state.mode == "forecast":
                 st.caption(f"※ 本分析由 AI 於 {current_date} 根據 {name}({stock_id}) 最新數據自動生成。")
 
                 
-                  st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+                st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
