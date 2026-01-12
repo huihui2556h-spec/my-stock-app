@@ -305,6 +305,76 @@ elif st.session_state.mode == "forecast":
                 price_diff = curr_c - prev_close 
                 active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
 
+                # --- [新增：AI 機器學習個別回測模組] ---
+                from sklearn.linear_model import LinearRegression
+                from sklearn.preprocessing import StandardScaler
+                from sklearn.metrics import r2_score, mean_absolute_error
+
+                # 準備該標的專屬資料 (過去 2 年回測)
+                df_ml = df.copy()
+                df_ml['Next_High'] = df_ml['High'].shift(-1)
+                df_ml = df_ml.dropna()
+
+                features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
+                X_ml = df_ml[features_ml]
+                y_ml = df_ml['Next_High']
+
+                # 個別化回測判定 (80/20 切割)
+                split_ml = int(len(X_ml) * 0.8)
+                X_train, X_test = X_ml[:split_ml], X_ml[split_ml:]
+                y_train, y_test = y_ml[:split_ml], y_ml[split_ml:]
+
+                scaler_ml = StandardScaler()
+                X_train_scaled = scaler_ml.fit_transform(X_train)
+                X_test_scaled = scaler_ml.transform(X_test)
+
+                model_ml = LinearRegression()
+                model_ml.fit(X_train_scaled, y_train)
+
+                # 計算該標的的專屬信心度
+                y_pred_ml = model_ml.predict(X_test_scaled)
+                stock_r2 = r2_score(y_test, y_pred_ml)
+                stock_mae = mean_absolute_error(y_test, y_pred_ml)
+
+                # 預測明日最高價並修正 Tick
+                latest_scaled = scaler_ml.transform(df[features_ml].tail(1))
+                ml_tomorrow_high = model_ml.predict(latest_scaled)[0]
+                ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
+
+                # 計算 ML 預估的上漲空間
+                ml_upside = ((ml_tomorrow_high / curr_c) - 1) * 100
+
+                # --- [顯示：機器學習個別標定報告 (亮底深字)] ---
+                st.markdown(f"### 🤖 {name} 專屬 AI 機器學習回測")
+                r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
+                r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
+
+                mc1, mc2, mc3 = st.columns(3)
+                with mc1:
+                    st.markdown(f"""
+                        <div style="background:#FFFBEB; padding:20px; border-radius:12px; border:1px solid #FEF3C7; text-align:center;">
+                            <b style="color:#92400E; font-size:14px;">🎯 ML 預估最高價</b>
+                            <h2 style="color:#78350F; margin:10px 0;">{ml_tomorrow_high:.2f}</h2>
+                            <small style="color:#B45309;">預期空間: {ml_upside:.2f}%</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with mc2:
+                    st.markdown(f"""
+                        <div style="background:#ECFDF5; padding:20px; border-radius:12px; border:1px solid #D1FAE5; text-align:center;">
+                            <b style="color:#065F46; font-size:14px;">📈 預測信心度 (R2)</b>
+                            <h2 style="color:{r2_color}; margin:10px 0;">{stock_r2:.4f}</h2>
+                            <small style="color:#059669;">準確度評價：{r2_eval}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with mc3:
+                    st.markdown(f"""
+                        <div style="background:#FDF2F2; padding:20px; border-radius:12px; border:1px solid #FEE2E2; text-align:center;">
+                            <b style="color:#9B1C1C; font-size:14px;">📏 平均預估誤差</b>
+                            <h2 style="color:#AF1919; margin:10px 0;">±{stock_mae:.2f}</h2>
+                            <small style="color:#C81E1E;">歷史平均偏離值</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+
                 # --- [2. 排版優化區：解決手機對比與字體問題] ---
                 st.markdown(f"""
                     <style>
@@ -471,6 +541,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
