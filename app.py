@@ -96,6 +96,8 @@ def stock_box(label, price, pct, acc, color):
     """, unsafe_allow_html=True)
 
 # ================== 介面控制 ==================
+if st.session_state.mode == "home":
+    st.title("⚖️ 台股 AI 交易決策系統")
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True):
@@ -105,7 +107,7 @@ def stock_box(label, price, pct, acc, color):
         if st.button("📊 隔日當沖及波段預估", use_container_width=True):
             st.session_state.mode = "forecast"
             st.rerun()
-            
+
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): 
         st.session_state.mode = "home"
@@ -189,7 +191,9 @@ elif st.session_state.mode == "realtime":
                     """, unsafe_allow_html=True)
 
 elif st.session_state.mode == "forecast":
-    if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
+    if st.sidebar.button("⬅️ 返回首頁"):
+        st.session_state.mode = "home"
+        st.rerun()
     st.title("📊 隔日當沖與波段預估")
     stock_id = st.text_input("輸入代碼 (例: 2330)")
 
@@ -256,6 +260,7 @@ elif st.session_state.mode == "forecast":
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
 
 
