@@ -296,6 +296,7 @@ elif st.session_state.mode == "forecast":
 
                 # --- 🎯 補充說明註解 (根據您的指示強化) ---
                 # 取得執行當下的時間
+                tw_tz = pytz.timezone("Asia/Taipei")
                 current_date = datetime.now(tw_tz).strftime('%Y-%m-%d')
 
                 st.info(f"📋 **AI 數據自動化偵測報告 ({current_date})**")
@@ -334,6 +335,7 @@ elif st.session_state.mode == "forecast":
 
                 
                  st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
