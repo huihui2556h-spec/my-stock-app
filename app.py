@@ -58,12 +58,12 @@ def stock_box(label, price, pct, acc, color_type="red"):
 
 # --- 主程式 ---
 if st.session_state.mode == "home":
-    st.title("⚖️ 台股 AI 交易系統")
+    st.title("⚖️ 台股 AI 多因子交易系統")
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
     with col_b:
-        if st.button("📊 隔日及波段預估", use_container_width=True): navigate_to("forecast")
+        if st.button("📊 深度預估分析", use_container_width=True): navigate_to("forecast")
 
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -93,7 +93,7 @@ elif st.session_state.mode == "realtime":
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    st.title("📊 隔日及波段預估")
+    st.title("📊 深度預估與波段分析")
     stock_id = st.text_input("輸入代碼:", key="fc_id")
     if stock_id:
         symbol = f"{stock_id}.TW"
@@ -167,11 +167,4 @@ elif st.session_state.mode == "forecast":
             plt.xticks(rotation=45)
             st.pyplot(fig)
 
-            st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量（紅漲綠跌）。")
-            st.markdown(f"""
-            * **達成率計算**：回測過去 **60 個交易日** 之歷史數據。
-            * **主力進出修正**：根據成交量與 5 日均量關係調整敏感度。
-            * **國際局勢**：連動 S&P 500 指數。
-            * <span style="color:#FF4B4B">**Resistance (紅虛線)**</span>：預估五日最高壓力位。
-            * <span style="color:#28A745">**Support (綠虛線)**</span>：預估五日最低支撐位。
-            """, unsafe_allow_html=True)
+            st.info("📘 **圖表說明**：上方藍線為收盤價走勢；下方柱狀圖為成交量（紅漲綠跌）。")
