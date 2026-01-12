@@ -8,6 +8,7 @@ from datetime import datetime
 import pytz
 import matplotlib.pyplot as plt
 import matplotlib
+import time
 
 # --- 中文字型設定（解決亂碼） ---
 matplotlib.rcParams['font.sans-serif'] = [
@@ -15,14 +16,15 @@ matplotlib.rcParams['font.sans-serif'] = [
 ]
 matplotlib.rcParams['axes.unicode_minus'] = False
 
-st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="centered")
+st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="centered", page_icon="💹")
 
+# --- 狀態初始化 ---
 if 'mode' not in st.session_state:
     st.session_state.mode = "home"
 
 def navigate_to(new_mode):
     st.session_state.mode = new_mode
-    st.rerun()
+    st.experimental_rerun()
 
 # --- 真實回測命中率 ---
 def calculate_real_accuracy(df, factor, side='high'):
@@ -96,44 +98,52 @@ elif st.session_state.mode=="realtime":
     st.title("⚡ 盤中即時量價（當沖）")
 
     tw_tz = pytz.timezone("Asia/Taipei")
-    now = datetime.now(tw_tz)
-    is_market_open = now.weekday()<5 and ((now.hour==9 and now.minute>=0) or (9<now.hour<13) or (now.hour==13 and now.minute<=30))
-
     stock_id = st.text_input("輸入股票代碼（如：2330）")
+
     if stock_id:
-        if not is_market_open:
-            st.error("🚫 目前非交易時段")
-        else:
-            df, sym = fetch_stock_data(stock_id)
+        # 自動刷新每 30 秒
+        refresh_sec = 30
+        while True:
+            now = datetime.now(tw_tz)
+            is_market_open = now.weekday()<5 and ((now.hour==9 and now.minute>=0) or (9<now.hour<13) or (now.hour==13 and now.minute<=30))
+            df, sym = fetch_stock_data(stock_id, period="5d")
+            
             if df.empty:
                 st.error("❌ 查無資料")
+                break
+            df = df.ffill()
+            curr_price = float(df['Close'].iloc[-1])
+            tr = np.maximum(df['High'] - df['Low'],
+                            np.maximum(abs(df['High']-df['Close'].shift(1)),
+                                       abs(df['Low']-df['Close'].shift(1))))
+            atr = tr.rolling(14).mean().iloc[-1]
+
+            st.metric(f"📍 {get_stock_name(stock_id)} 即時價格", f"{curr_price:.2f}")
+
+            # 計算建議價
+            if np.isnan(atr) or atr==0:
+                st.warning("⚠️ 波動資料不足，暫不提供當沖建議")
             else:
-                df = df.ffill()
-                curr_price = float(df['Close'].iloc[-1])
-                tr = np.maximum(df['High'] - df['Low'],
-                                np.maximum(abs(df['High']-df['Close'].shift(1)),
-                                           abs(df['Low']-df['Close'].shift(1))))
-                atr = tr.rolling(14).mean().iloc[-1]
+                buy_price = curr_price - atr*0.35
+                sell_price = curr_price + atr*0.55
+                expected_return = (sell_price - buy_price)/buy_price*100
 
-                st.metric(f"📍 {get_stock_name(stock_id)} 即時價格", f"{curr_price:.2f}")
-
-                if np.isnan(atr) or atr==0:
-                    st.warning("⚠️ 波動資料不足，暫不提供當沖建議")
+                st.divider()
+                st.subheader("🎯 當沖 AI 建議")
+                if expected_return<1.5:
+                    st.warning(f"🚫 預期報酬僅 {expected_return:.2f}%（低於 1.5%）\n今日波動不足，不建議進場")
                 else:
-                    buy_price = curr_price - atr*0.35
-                    sell_price = curr_price + atr*0.55
-                    expected_return = (sell_price - buy_price)/buy_price*100
+                    c1, c2, c3 = st.columns(3)
+                    c1.success(f"🟢 建議買點\n{buy_price:.2f}")
+                    c2.error(f"🔴 建議賣點\n{sell_price:.2f}")
+                    c3.info(f"📈 預期報酬率\n{expected_return:.2f}%")
+                    st.caption("📘 說明：本建議以 ATR 波動推估，僅在風報比達標時顯示。")
 
-                    st.divider()
-                    st.subheader("🎯 當沖 AI 建議")
-                    if expected_return<1.5:
-                        st.warning(f"🚫 預期報酬僅 {expected_return:.2f}%（低於 1.5%）\n今日波動不足，不建議進場")
-                    else:
-                        c1, c2, c3 = st.columns(3)
-                        c1.success(f"🟢 建議買點\n{buy_price:.2f}")
-                        c2.error(f"🔴 建議賣點\n{sell_price:.2f}")
-                        c3.info(f"📈 預期報酬率\n{expected_return:.2f}%")
-                        st.caption("📘 說明：本建議以 ATR 波動推估，僅在風報比達標時顯示。")
+            
+
+            # 自動刷新
+            time.sleep(refresh_sec)
+            st.experimental_rerun()
 
 # ================== 隔日 / 波段 ==================
 elif st.session_state.mode=="forecast":
@@ -191,4 +201,27 @@ elif st.session_state.mode=="forecast":
                 ax.axhline(curr_c-atr*1.6/bias, color='green', ls='--', alpha=0.3, label="五日支撐")
                 ax.legend(prop={'size':10})
                 st.pyplot(fig)
+                # 畫價量圖
+                fig, (ax1, ax2) = plt.subplots(2,1, figsize=(10,5), gridspec_kw={'height_ratios':[3,1]}, sharex=True)
+                plot_df = df.tail(40)
+                ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=2, label="收盤價")
+                ax1.axhline(curr_price+atr*0.55, color='red', ls='--', alpha=0.3, label="建議賣點")
+                ax1.axhline(curr_price-atr*0.35, color='green', ls='--', alpha=0.3, label="建議買點")
+                ax1.legend(prop={'size':10})
+                ax1.grid(alpha=0.3)
+                # 成交量
+                colors = ['red' if plot_df['Close'].iloc[i]>=plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
+                ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.7)
+                ax2.set_ylabel("成交量")
+                st.pyplot(fig)
+
+                st.info("📘 **圖表說明**：上方為收盤價與建議買賣線，下方為成交量（紅漲綠跌）")
                 st.info("📘 **圖表說明**：紅虛線為壓力位，綠虛線為支撐位。")
+
+# ================== 中文註解 ==================
+# 📌 中文註解：
+# 1. 盤中即時量價會自動每 30 秒刷新，並顯示建議買賣價與預期報酬率。
+# 2. ATR 波動用於計算當沖建議價，風報比未達 1.5% 則不建議進場。
+# 3. 隔日/波段分析顯示五日壓力支撐、隔日最高最低，以及建議當沖買賣點。
+# 4. 所有圖表中文字、圖例均可正常顯示中文（亂碼修正）。
+# 5. 成交量紅綠顏色依照當日漲跌顯示。
