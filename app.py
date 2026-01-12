@@ -103,3 +103,4 @@ elif st.session_state.mode == "realtime":
     tw_tz = pytz.timezone('Asia/Taipei')
     df_rt, sym_rt = None, None
     stock_id = st.text_input("輸入代碼:")
+
