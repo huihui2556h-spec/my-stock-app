@@ -396,7 +396,7 @@ elif st.session_state.mode == "forecast":
                 ml_upside = ((ml_tomorrow_high / curr_c) - 1) * 100
 
                 # --- [顯示：機器學習個別標定報告 (亮底深字)] ---
-                st.markdown(f"###🤖 {name} 專屬 AI 機器學習回測")
+                st.markdown(f"### 🤖 {name} 專屬 AI 機器學習回測")
                 r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
                 r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
 
@@ -542,6 +542,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
