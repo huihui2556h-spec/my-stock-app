@@ -201,118 +201,81 @@ elif st.session_state.mode == "forecast":
         with st.spinner('AI 多因子計算與回測中...'):
             df, sym = fetch_stock_data(stock_id)
             if not df.empty:
-                df = df.ffill()
+                # --- 1. [核心計算區] 先算完所有變數 ---
                 name = get_stock_name(stock_id)
+                df = df.ffill()
                 curr_c = float(df['Close'].iloc[-1])
 
-                # 籌碼修正 (FinMind 邏輯注入)
+                # 2026-01-12 指示：籌碼與慣性計算
                 chip_score = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
                 bias = 1.006 if chip_score > 1 else 0.994
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
                 atr = tr.rolling(14).mean().iloc[-1]
                 est_open = curr_c + (atr * 0.05 * bias)
-              
+                vol_inertia = (df['Close'].pct_change().std() * 100)
 
-                # --- 確保這整段都在 if stock_id: 的縮排內 ---
-if stock_id:
-    with st.spinner('執行 AI 籌碼修正與命中率回測...'):
-        df, sym = fetch_stock_data(stock_id)
-        
-        if not df.empty:
-            # [核心計算區] 先定義所有變數，避免 NameError
-            name = get_stock_name(stock_id)
-            df = df.ffill()
-            curr_c = float(df['Close'].iloc[-1])
-            
-            # FinMind 籌碼邏輯
-            chip_score = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
-            bias = 1.006 if chip_score > 1 else 0.994
-            
-            # 波動慣性與開盤預估
-            tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
-            atr = tr.rolling(14).mean().iloc[-1]
-            est_open = curr_c + (atr * 0.05 * bias)
-            vol_inertia = (df['Close'].pct_change().std() * 100)
+                # 計算 60 日真實回測命中率
+                acc_dh = calculate_real_accuracy(df, 0.85 * bias, 'high')
+                acc_dl = calculate_real_accuracy(df, 0.65 / bias, 'low')
+                acc_wh = calculate_real_accuracy(df, 1.9 * bias, 'high')
+                acc_wl = calculate_real_accuracy(df, 1.6 / bias, 'low')
 
-            # --- 🎯 介面顯示區：獨立大字體收盤價 (完全還原您的排版) ---
-            st.divider()
-            h1, h2 = st.columns([3, 2])
+                # --- 2. [頂部核心顯示區] 巨型收盤價與籌碼資訊 ---
+                st.divider()
+                h1, h2 = st.columns([3, 2])
+                with h1:
+                    st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>
+                            <p style='color:#444; font-size:26px; margin:0;'>最新收盤報價：</p>
+                            <b style='font-size:90px; color:#C53030; line-height:1;'>{curr_c:.2f}</b>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with h2:
+                    st.info(f"📊 籌碼修正：{bias:.3f} ({'法人偏多' if bias > 1 else '法人偏空'})\n\n🚩 波動慣性：{vol_inertia:.2f}\n\n🌅 預估明日開盤：{est_open:.2f}")
 
-            with h1:
-                # 股票名稱：恢復黑色 60px
-                st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
-                
-                # 收盤價：恢復 90px 巨型字體與紅色色塊
-                st.markdown(f"""
-                    <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>
-                        <p style='color:#444; font-size:26px; margin:0;'>最新收盤報價：</p>
-                        <b style='font-size:90px; color:#C53030; line-height:1;'>{curr_c:.2f}</b>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            with h2:
-                # 整合資訊區：籌碼、慣性、開盤預估
-                st.info(f"""
-                📊 籌碼修正：{bias:.3f} ({'法人偏多' if bias > 1 else '法人偏空'})
-                
-                🚩 波動慣性：{vol_inertia:.2f}
-                
-                🌅 預估明日開盤：{est_open:.2f}
-                """)
-            
-            # --- 後續的壓力支撐卡片請接在此處 ---
-
-                # 計算 60 日真實回測
-                acc_h1 = calculate_real_accuracy(df, 0.85 * bias, 'high')
-                acc_h5 = calculate_real_accuracy(df, 1.9 * bias, 'high')
-                acc_l1 = calculate_real_accuracy(df, 0.65 / bias, 'low')
-                acc_l5 = calculate_real_accuracy(df, 1.6 / bias, 'low')
-
+                # --- 3. [壓力支撐區] 四欄並列 (修正圖片中的擠壓問題) ---
                 st.subheader(f"🏠 {name} ({stock_id}) 預估分析")
-                
-                # --- 🎯 修正排版：四欄並列 (與圖片一致) ---
                 m1, m2, m3, m4 = st.columns(4)
-                with m1: stock_box("📈 隔日壓力", curr_c + atr*0.85*bias, acc_dh, "red")
-                with m2: stock_box("📉 隔日支撐", curr_c - atr*0.75/bias, acc_dl, "green")
-                with m3: stock_box("🚩 五日壓力", curr_c + atr*1.9*bias, acc_wh, "red")
-                with m4: stock_box("⚓ 五日支撐", curr_c - atr*1.6/bias, acc_wl, "green")
+                # 這裡確保使用正確定義的變數，解決 NameError
+                with m1: stock_box("📈 隔日壓力", curr_c + atr * 0.85 * bias, ((curr_c + atr * 0.85 * bias) / curr_c - 1) * 100, acc_dh, "red")
+                with m2: stock_box("📉 隔日支撐", curr_c - atr * 0.65 / bias, ((curr_c - atr * 0.65 / bias) / curr_c - 1) * 100, acc_dl, "green")
+                with m3: stock_box("🚩 五日壓力", curr_c + atr * 1.9 * bias, ((curr_c + atr * 1.9 * bias) / curr_c - 1) * 100, acc_wh, "red")
+                with m4: stock_box("⚓ 五日支撐", curr_c - atr * 1.6 / bias, ((curr_c - atr * 1.6 / bias) / curr_c - 1) * 100, acc_wl, "green")
 
-                # --- 🏹 修正排版：當沖建議 (藍/紅/綠方塊) ---
+                # --- 4. [當沖建議區] 彩色橫向方塊 ---
                 st.divider()
                 st.markdown("### 🏹 明日當沖建議價格")
                 d1, d2, d3 = st.columns(3)
                 with d1:
-                 st.markdown(f'<div style="background:#EBF8FF; padding:20px; border-radius:10px; border: 1px solid #BEE3F8; text-align:center;"><b style="color:#2C5282;">🔹 強勢追多</b><br><h2 style="color:#2B6CB0; margin:10px 0;">{est_open-(atr*0.1):.2f}</h2></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="background:#EBF8FF; padding:20px; border-radius:10px; border: 1px solid #BEE3F8; text-align:center;"><b style="color:#2C5282;">🔹 強勢追多</b><br><h2 style="color:#2B6CB0; margin:10px 0;">{est_open - (atr * 0.1):.2f}</h2></div>', unsafe_allow_html=True)
                 with d2:
-                 st.markdown(f'<div style="background:#FFF5F5; padding:20px; border-radius:10px; border: 1px solid #FED7D7; text-align:center;"><b style="color:#9B2C2C;">🔹 低接買點</b><br><h2 style="color:#C53030; margin:10px 0;">{curr_c-(atr*0.45):.2f}</h2></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="background:#FFF5F5; padding:20px; border-radius:10px; border: 1px solid #FED7D7; text-align:center;"><b style="color:#9B2C2C;">🔹 低接買點</b><br><h2 style="color:#C53030; margin:10px 0;">{curr_c - (atr * 0.45):.2f}</h2></div>', unsafe_allow_html=True)
                 with d3:
-                 st.markdown(f'<div style="background:#F0FFF4; padding:20px; border-radius:10px; border: 1px solid #C6F6D5; text-align:center;"><b style="color:#22543D;">🔸 短線獲利</b><br><h2 style="color:#38A169; margin:10px 0;">{curr_c+(atr*0.75):.2f}</h2></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="background:#F0FFF4; padding:20px; border-radius:10px; border: 1px solid #C6F6D5; text-align:center;"><b style="color:#22543D;">🔸 短線獲利</b><br><h2 style="color:#38A169; margin:10px 0;">{curr_c + (atr * 0.75):.2f}</h2></div>', unsafe_allow_html=True)
 
-                # --- 📈 修正圖片亂碼與排版 ---
+                # --- 5. [走勢圖區] 修正註解與亂碼 ---
                 st.divider()
                 st.markdown(f"### 📈 {name}({sym}) 走勢圖與 AI 預估區間")
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), gridspec_kw={'height_ratios':[3, 1]}, sharex=True)
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), gridspec_kw={'height_ratios': [3, 1]}, sharex=True)
                 plot_df = df.tail(45)
                 
-                # 價格圖
                 ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=3, label="收盤價")
-                ax1.axhline(curr_c + atr*1.9*bias, color='red', ls='--', lw=2, alpha=0.7, label="五日壓力")
-                ax1.axhline(curr_c - atr*1.6/bias, color='green', ls='--', lw=2, alpha=0.7, label="五日支撐")
-                
-                # 圖例與網格
+                ax1.axhline(curr_c + atr * 1.9 * bias, color='red', ls='--', lw=2, alpha=0.7, label="五日壓力")
+                ax1.axhline(curr_c - atr * 1.6 / bias, color='green', ls='--', lw=2, alpha=0.7, label="五日支撐")
                 ax1.legend(loc='upper left', frameon=True, fontsize=10)
                 ax1.grid(alpha=0.3)
-                ax1.set_ylabel("價格")
                 
-                # 成交量
                 v_colors = ['#EF5350' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else '#26A69A' for i in range(len(plot_df))]
                 ax2.bar(plot_df.index, plot_df['Volume'], color=v_colors, alpha=0.8)
-                ax2.set_ylabel("成交量")
                 
                 plt.tight_layout()
                 st.pyplot(fig)
-                st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
+                st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間區間。")
+            else:
+                st.error("❌ 查無資料，請確認代碼。")
             
+
 
 
 
