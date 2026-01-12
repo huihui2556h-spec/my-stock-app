@@ -358,16 +358,17 @@ elif st.session_state.mode == "forecast":
                 price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
                 price_change_pct = (curr_c - prev_close) / prev_close * 100
 
-                # --- [新增：AI 機器學習個別回測模組] ---
+               # --- [1. 機器學習個別回測：縮短至一個月] ---
                 from sklearn.linear_model import LinearRegression
                 from sklearn.preprocessing import StandardScaler
                 from sklearn.metrics import r2_score, mean_absolute_error
 
-                # 準備該標的專屬資料 (過去 2 年回測)
-                df_ml = df.copy()
+                # 僅取最近 30 筆資料 (約一個月的交易日)
+                df_ml = df.tail(30).copy() 
                 df_ml['Next_High'] = df_ml['High'].shift(-1)
                 df_ml = df_ml.dropna()
 
+            if len(df_ml) > 10: # 確保至少有兩週數據可供回測
                 features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
                 X_ml = df_ml[features_ml]
                 y_ml = df_ml['Next_High']
@@ -378,16 +379,16 @@ elif st.session_state.mode == "forecast":
                 y_train, y_test = y_ml[:split_ml], y_ml[split_ml:]
 
                 scaler_ml = StandardScaler()
-                X_train_scaled = scaler_ml.fit_transform(X_train)
-                X_test_scaled = scaler_ml.transform(X_test)
+                X_train_scaled = scaler_ml.fit_transform(X_ml)
+                
 
                 model_ml = LinearRegression()
-                model_ml.fit(X_train_scaled, y_train)
+                model_ml.fit(X_train_scaled, y_ml)
 
                 # 計算該標的的專屬信心度
-                y_pred_ml = model_ml.predict(X_test_scaled)
-                stock_r2 = r2_score(y_test, y_pred_ml)
-                stock_mae = mean_absolute_error(y_test, y_pred_ml)
+                y_pred = model_ml.predict(X_scaled)
+                stock_r2 = r2_score(y_ml, y_pred)
+                stock_mae = mean_absolute_error(y_ml, y_pred)
 
                 # 預測明日最高價並修正 Tick
                 latest_scaled = scaler_ml.transform(df[features_ml].tail(1))
@@ -545,6 +546,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
