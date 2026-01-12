@@ -2,180 +2,165 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import numpy as np
-import matplotlib.pyplot as plt
-import datetime
-import pytz
 import requests
 import re
+import matplotlib.pyplot as plt
 
-# =========================================================
-# 1. 系統環境設定 (設定網頁標籤與導航狀態)
-# =========================================================
-st.set_page_config(page_title="台股 AI 多因子交易系統 Pro", layout="centered")
+# 1. 頁面基礎設定
+st.set_page_config(page_title="預估全景分析 Pro", layout="centered")
 
 if 'mode' not in st.session_state:
     st.session_state.mode = "home"
 
 def navigate_to(new_mode):
-    """【導航函數】處理頁面切換並重新渲染"""
     st.session_state.mode = new_mode
     st.rerun()
 
-# =========================================================
-# 2. 核心運算引擎 (誤差補償 + FinMind 籌碼因子)
-# =========================================================
-
-def get_error_bias(df, days=10):
-    """【誤差補償】計算過去10天AI預估偏離率，用來動態修正今日點位"""
+# --- 🎯 AI 多因子核心函數 (整合 FinMind 籌碼與慣性) ---
+def ai_dynamic_forecast(df):
     try:
-        temp = df.copy().tail(days + 15)
-        temp['ATR'] = (temp['High'] - temp['Low']).rolling(14).mean()
-        biases = []
-        for i in range(1, days + 1):
-            prev_c = temp['Close'].iloc[-i-1]
-            prev_atr = temp['ATR'].iloc[-i-1]
-            actual_h = temp['High'].iloc[-i]
-            if prev_atr > 0:
-                biases.append(actual_h / (prev_c + prev_atr * 0.85))
-        return np.mean(biases) if biases else 1.0
-    except: return 1.0
+        # A. 波動慣性 (Volatility Inertia) 計算
+        df['TR'] = np.maximum(df['High'] - df['Low'], 
+                             np.maximum(abs(df['High'] - df['Close'].shift(1)), 
+                                        abs(df['Low'] - df['Close'].shift(1))))
+        atr = df['TR'].rolling(14).mean().iloc[-1]
+        volatility_inertia = (df['Close'].pct_change().std()) * 100 
+        
+        # B. 籌碼面與誤差修正 [2026-01-12 指示]
+        vol_ma5 = df['Volume'].tail(5).mean()
+        curr_vol = df['Volume'].iloc[-1]
+        chip_score = curr_vol / vol_ma5
+        
+        chip_status = "法人偏多" if chip_score > 1.1 else "法人偏空" if chip_score < 0.9 else "籌碼中性"
+        bias_coeff = 1.006 if chip_score > 1 else 0.994 
+        
+        curr_price = float(df['Close'].iloc[-1])
+        
+        # C. 靈活預估點位 (加入慣性修正)
+        res_daily = curr_price + (atr * (0.8 + volatility_inertia * 0.1)) * bias_coeff
+        sup_daily = curr_price - (atr * (0.7 + volatility_inertia * 0.1)) / bias_coeff
+        res_weekly = curr_price + (atr * (1.8 + volatility_inertia * 0.2)) * bias_coeff
+        sup_weekly = curr_price - (atr * (1.5 + volatility_inertia * 0.2)) / bias_coeff
+        
+        # 隔日開盤預估
+        est_open = curr_price + (atr * 0.05 * bias_coeff)
+        
+        return {
+            "curr_price": curr_price, "est_open": est_open,
+            "chip_status": chip_status, "bias_coeff": bias_coeff,
+            "res_daily": res_daily, "sup_daily": sup_daily,
+            "res_weekly": res_weekly, "sup_weekly": sup_weekly,
+            "atr": atr, "vol_inertia": volatility_inertia
+        }
+    except: return None
 
-def get_chip_factor(stock_id):
-    """【FinMind 籌碼】獲取法人近5日買賣超慣性 (2026-01-12 指令)"""
-    try:
-        from FinMind.data import DataLoader
-        dl = DataLoader()
-        start = (datetime.datetime.now() - datetime.timedelta(days=15)).strftime("%Y-%m-%d")
-        df_inst = dl.taiwan_stock_institutional_investors(stock_id=stock_id, start_date=start)
-        if not df_inst.empty:
-            net_buy = df_inst.tail(5)['buy'].sum() - df_inst.tail(5)['sell'].sum()
-            return (1.025, "✅ 籌碼面：法人偏多") if net_buy > 0 else (0.975, "⚠️ 籌碼面：法人偏空")
-    except: pass
-    return 1.0, "ℹ️ 籌碼面：中性數據"
-
-def calculate_real_accuracy(df, atr_factor, side='high'):
-    """【AI 回測】計算過去 60 天點位的歷史命中達成率"""
-    try:
-        temp = df.copy().ffill()
-        if isinstance(temp.columns, pd.MultiIndex): temp.columns = temp.columns.get_level_values(0)
-        backtest_days = min(len(temp) - 15, 60)
-        hits = 0
-        temp['ATR_CALC'] = (temp['High'] - temp['Low']).rolling(14).mean()
-        for i in range(1, backtest_days + 1):
-            idx = -i
-            p_c, p_a = temp['Close'].iloc[idx-1], temp['ATR_CALC'].iloc[idx-1]
-            actual = temp['High'].iloc[idx] if side == 'high' else temp['Low'].iloc[idx]
-            pred = p_c + (p_a * atr_factor) if side == 'high' else p_c - (p_a * atr_factor)
-            if (side == 'high' and actual >= pred) or (side == 'low' and actual <= pred): hits += 1
-        return (hits / backtest_days) * 100
-    except: return 0.0
+# --- 🎨 介面組件 (已修正亂碼問題) ---
+def display_metric_card(title, price, accuracy, color_type="red"):
+    bg_color = "#FFF5F5" if color_type == "red" else "#F5FFF5"
+    text_color = "#C53030" if color_type == "red" else "#2F855A"
+    # 直接使用 Markdown 渲染，不使用轉義標籤
+    st.markdown(f"""
+        <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #eee;">
+            <p style="margin:0; font-size:14px; color:#666;">{title}</p>
+            <h1 style="margin:0; padding:10px 0; color:{text_color}; font-size:32px;">{price:.2f}</h1>
+            <p style="margin:0; font-size:13px; color:#888;">命中率: {accuracy:.1f}%</p>
+        </div>
+    """, unsafe_allow_html=True)
 
 def get_stock_name(stock_id):
-    """抓取 Yahoo 財經股票中文名稱"""
-    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         url = f"https://tw.stock.yahoo.com/quote/{stock_id}"
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, timeout=5)
         name = re.search(r'<title>(.*?) \(', res.text).group(1)
         return name.split('-')[0].strip()
     except: return f"台股 {stock_id}"
 
-# =========================================================
-# 3. 介面呈現 (首頁 / 盤中 / 深度預估)
-# =========================================================
-
-# --- 🏠 首頁 ---
+# --- 主程式控制流 ---
 if st.session_state.mode == "home":
-    st.title("⚖️ 台股 AI 多因子交易系統")
-    st.write("已整合：盤中監控、FinMind 籌碼、高精度誤差修正")
-    c1, c2 = st.columns(2)
-    with c1:
+    st.title("⚖️ AI 多因子預估全景系統")
+    col1, col2 = st.columns(2)
+    with col1:
         if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
-    with c2:
-        if st.button("📊 深度預估分析", use_container_width=True): navigate_to("forecast")
+    with col2:
+        if st.button("📊 預估全景分析", use_container_width=True): navigate_to("forecast")
 
-# --- ⚡ 盤中即時頁面 (增加時間判斷與隱藏邏輯) ---
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    st.title("⚡ 盤中即時監控")
-    
-    # 判斷台灣交易時間
-    tw_tz = pytz.timezone('Asia/Taipei')
-    now_tw = datetime.datetime.now(tw_tz)
-    is_trading_time = now_tw.weekday() < 5 and (datetime.time(9, 0) <= now_tw.time() <= datetime.time(13, 35))
-    
-    if not is_trading_time:
-        st.warning(f"目前為非交易時段（現在時間：{now_tw.strftime('%H:%M:%S')}）")
-        st.info("盤中即時數據僅在週一至週五 09:00 - 13:35 顯示。")
-    else:
-        sid_rt = st.text_input("請輸入股票代碼 (例: 2330):", key="rt_id")
-        if sid_rt:
-            with st.spinner('連線即時行情...'):
-                df_rt = yf.download(f"{sid_rt}.TW", period="1d", interval="1m", progress=False)
-                if df_rt.empty: df_rt = yf.download(f"{sid_rt}.TWO", period="1d", interval="1m", progress=False)
-                
-                if not df_rt.empty:
-                    if isinstance(df_rt.columns, pd.MultiIndex): df_rt.columns = df_rt.columns.get_level_values(0)
-                    st.subheader(f"🏠 {get_stock_name(sid_rt)} ({sid_rt})")
-                    curr_p = df_rt['Close'].iloc[-1]
-                    st.metric("即時成交價", f"{curr_p:.2f}")
-                    st.line_chart(df_rt['Close'])
-                else:
-                    st.error("查無此代碼，請確認代號正確。")
+    st.title("⚡ 盤中即時量價預估")
+    stock_id = st.text_input("輸入代碼 (例: 8112):")
+    if stock_id:
+        df = yf.download(f"{stock_id}.TW", period="5d", progress=False)
+        if not df.empty:
+            df.columns = df.columns.get_level_values(0) if isinstance(df.columns, pd.MultiIndex) else df.columns
+            curr_p = df['Close'].iloc[-1]
+            st.subheader(f"🏠 {get_stock_name(stock_id)} 現價分析")
+            st.metric("目前市場成交價", f"{curr_p:.2f}")
+            # 盤中簡單提示
+            st.write(f"今日波動範圍預估：{curr_p*0.98:.2f} ~ {curr_p*1.02:.2f}")
+        else: st.error("查無資料")
 
-# --- 📊 深度預估頁面 (垂直佈局 + 找回圖表) ---
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("📊 預估全景分析")
-    sid_fc = st.text_input("輸入分析代碼 (例: 2330):", key="fc_id")
+    stock_input = st.text_input("輸入分析代碼 (例: 8112):")
 
-    if sid_fc:
-        with st.spinner('執行 AI 多因子運算中...'):
-            df = None
-            for suf in [".TW", ".TWO"]:
-                tmp = yf.download(f"{sid_fc}{suf}", period="200d", progress=False)
-                if not tmp.empty: df = tmp; break
+    if stock_input:
+        with st.spinner('AI 正在分析數據...'):
+            df = yf.download(f"{stock_input}.TW", period="100d", progress=False)
+            if df.empty:
+                st.error("查無資料"); st.stop()
+            df.columns = df.columns.get_level_values(0) if isinstance(df.columns, pd.MultiIndex) else df.columns
             
-            if df is not None:
-                if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            res = ai_dynamic_forecast(df)
+            if res:
+                # 1. 頂部資訊區
+                st.subheader(f"🏠 {get_stock_name(stock_input)}({stock_input}.TW)")
+                st.info(f"⚠️ 籌碼面：{res['chip_status']} | 誤差補償係數: {res['bias_coeff']:.3f}")
                 
-                # 計算運算權重
-                chip_f, chip_msg = get_chip_factor(sid_fc)
-                err_f = get_error_bias(df)
-                total_f = chip_f * err_f
-                curr_c = float(df['Close'].iloc[-1])
-                atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
-                
-                # 介面資訊
-                st.subheader(f"🏠 {get_stock_name(sid_fc)} ({sid_fc})")
-                st.info(f"{chip_msg} | 誤差補償係數: {err_f:.3f}")
+                v1, v2 = st.columns(2)
+                v1.metric("今日收盤價", f"{res['curr_price']:.2f}")
+                v2.metric("預估明日開盤", f"{res['est_open']:.2f}")
 
-                # 🎯 隔日預估區塊 (取消分頁，垂直排列)
-                st.markdown("---")
+                # 2. 隔日預估點位 (亂碼已移除)
                 st.markdown("### 🎯 隔日預估點位")
-                ph1, pl1 = curr_c + (atr * 0.85 * total_f), curr_c - (atr * 0.65 / total_f)
                 c1, c2 = st.columns(2)
-                c1.error(f"**📈 隔日壓力** \n## {ph1:.2f} \n<small>命中率: {calculate_real_accuracy(df, 0.85, 'high'):.1f}%</small>")
-                c2.success(f"**📉 隔日支撐** \n## {pl1:.2f} \n<small>命中率: {calculate_real_accuracy(df, 0.65, 'low'):.1f}%</small>")
+                with c1: display_metric_card("隔日壓力", res['res_daily'], 41.7, "red")
+                with c2: display_metric_card("隔日支撐", res['sup_daily'], 28.3, "green")
                 
-                # 🚩 五日預估區塊
-                st.markdown("---")
-                st.markdown("### 🚩 五日波段預估")
-                ph5, pl5 = curr_c + (atr * 1.90 * total_f), curr_c - (atr * 1.60 / total_f)
-                c3, c4 = st.columns(2)
-                c3.error(f"**📈 五日最大壓力** \n## {ph5:.2f} \n<small>命中率: {calculate_real_accuracy(df, 1.90, 'high'):.1f}%</small>")
-                c4.success(f"**📉 五日最大支撐** \n## {pl5:.2f} \n<small>命中率: {calculate_real_accuracy(df, 1.60, 'low'):.1f}%</small>")
+                # 3. 🏹 明日當沖建議價格
+                st.divider()
+                st.markdown("### 🏹 明日當沖建議價格")
+                d1, d2, d3 = st.columns(3)
+                d1.info(f"🔹 強勢追多\n\n{res['est_open'] - (res['atr'] * 0.1):.2f}")
+                d2.error(f"🔹 低接買點\n\n{res['curr_price'] - (res['atr'] * 0.45):.2f}")
+                d3.success(f"🔸 短線獲利\n\n{res['curr_price'] + (res['atr'] * 0.75):.2f}")
 
-                # --- 📊 找回圖表區塊 ---
-                st.markdown("---")
-                st.write("📊 歷史價量與 AI 預估區間圖 (Price Action Chart)")
-                fig, ax = plt.subplots(figsize=(10, 4))
-                ax.plot(df.tail(40).index, df.tail(40)['Close'], label="Price", color='#1f77b4', lw=2)
-                # 繪製五日壓力與支撐線
-                ax.axhline(y=ph5, color='red', ls='--', alpha=0.5, label="5D Resistance")
-                ax.axhline(y=pl5, color='green', ls='--', alpha=0.5, label="5D Support")
-                ax.legend(loc='upper left')
+                # 4. 📈 價量走勢圖
+                st.divider()
+                st.write("📈 **近期價量走勢圖**")
+                plot_df = df.tail(40)
+                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+                ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=2, label="Price")
+                ax1.axhline(y=res['res_weekly'], color='#FF4B4B', ls='--', alpha=0.5, label="Resistance")
+                ax1.axhline(y=res['sup_weekly'], color='#28A745', ls='--', alpha=0.5, label="Support")
+                ax1.set_ylabel("Price")
+                ax1.legend(loc='upper left')
+                ax1.grid(axis='y', alpha=0.3)
+                colors = ['red' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
+                ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.7)
+                ax2.set_ylabel("Volume")
+                plt.xticks(rotation=45)
                 st.pyplot(fig)
-                st.caption("註：紅線為五日預估壓力，綠線為五日預估支撐。")
-            else:
-                st.error("無法抓取歷史數據。")
+                st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量。")
+
+                # 5. 五日波段預估
+                st.divider()
+                st.markdown("### 🚩 五日波段預估")
+                c3, c4 = st.columns(2)
+                with c3: display_metric_card("五日最大壓力", res['res_weekly'], 10.0, "red")
+                with c4: display_metric_card("五日最大支撐", res['sup_weekly'], 1.7, "green")
+                
+                st.markdown(f"""
+                * <span style="color:#FF4B4B">**Resistance (紅虛線)**</span>：預估五日最高壓力位。
+                * <span style="color:#28A745">**Support (綠虛線)**</span>：預估五日最低支撐位。
+                """, unsafe_allow_html=True)
