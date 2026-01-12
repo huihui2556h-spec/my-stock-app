@@ -267,6 +267,55 @@ elif st.session_state.mode == "forecast":
                 # 修正預估開盤：符合台股跳動單位 [cite: 2026-01-12]
                 est_open = round(est_open_raw / tick) * tick
 
+                # --- [1. 計算區：維持您的邏輯] ---
+                tick = get_tick_size(curr_c)
+                vol_inertia = round((atr * bias) / tick) * tick 
+                est_open = round(est_open_raw / tick) * tick
+                
+                price_diff = curr_c - prev_close 
+                active_color = "#E53E3E" if price_diff >= 0 else "#38A169" # 亮紅/亮綠
+
+                # --- [2. 排版優化區：解決手機對比與字體問題] ---
+                st.markdown(f"""
+                    <style>
+                        /* 手機端自動縮小大字體 */
+                        @media (max-width: 600px) {{
+                            .main-price {{ font-size: 55px !important; }}
+                            .data-row {{ flex-direction: column !important; }}
+                        }}
+                    </style>
+
+                    <div style='background: #FFFFFF; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.05);'>
+                        <h2 style='color: #1E293B; margin: 0; font-size: 24px;'>{name} ({sym})</h2>
+                        <div style='display: flex; align-items: baseline; flex-wrap: wrap;'>
+                            <b class='main-price' style='font-size: 75px; color: {active_color}; letter-spacing: -2px;'>{curr_c:.2f}</b>
+                            <div style='margin-left: 15px;'>
+                                <span style='font-size: 28px; color: {active_color}; font-weight: 900; display: block;'>
+                                    {'▲' if price_diff >= 0 else '▼'} {abs(price_diff):.2f}
+                                </span>
+                                <span style='font-size: 18px; color: {active_color}; font-weight: 700;'>
+                                    ({(price_diff/prev_close*100):.2f}%)
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class='data-row' style='display: flex; background: #0F172A; padding: 15px; border-radius: 12px; color: white; margin-top: 15px; gap: 10px;'>
+                        <div style='flex: 1; text-align: center; border-right: 1px solid #334155;'>
+                            <span style='font-size: 12px; color: #94A3B8;'>籌碼修正</span>
+                            <div style='font-size: 18px; font-weight: bold;'>{bias:.3f}</div>
+                        </div>
+                        <div style='flex: 1; text-align: center; border-right: 1px solid #334155;'>
+                            <span style='font-size: 12px; color: #94A3B8;'>波動慣性</span>
+                            <div style='font-size: 18px; font-weight: bold; color: #FACC15;'>{vol_inertia:.2f}</div>
+                        </div>
+                        <div style='flex: 1; text-align: center;'>
+                            <span style='font-size: 12px; color: #94A3B8;'>預估開盤</span>
+                            <div style='font-size: 18px; font-weight: bold;'>{est_open:.2f}</div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
                 # --- 1. 計算漲跌點數與百分比 ---
                 price_diff = curr_c - prev_close  # 漲跌點數
                 price_change_pct = (price_diff / prev_close) * 100
@@ -409,6 +458,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
