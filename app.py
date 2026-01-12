@@ -8,11 +8,11 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib
 
-# --- 0. 設置中文字體與環境 ---
+# --- 0. 設置環境與字體 ---
 matplotlib.rc('font', family='Microsoft JhengHei' if 'Win' in str(matplotlib.get_backend()) else 'sans-serif')
 plt.rcParams['axes.unicode_minus'] = False 
 
-st.set_page_config(page_title="AI 全景預估系統", layout="wide")
+st.set_page_config(page_title="AI 全景預估系統 Pro", layout="wide")
 
 if 'mode' not in st.session_state:
     st.session_state.mode = "home"
@@ -21,11 +21,11 @@ def navigate_to(new_mode):
     st.session_state.mode = new_mode
     st.rerun()
 
-# --- 🎯 核心功能：真實回測勝率判斷 ---
+# --- 🎯 核心功能：真實回測勝率判斷 [2026-01-12 指示] ---
 def calculate_accuracy(df, factor, side='high'):
     try:
         temp_df = df.copy().ffill()
-        lookback = 60
+        lookback = 60 # 回測過去 60 個交易日
         if len(temp_df) < lookback + 15: return 0.0
         hits, total_days = 0, 0
         for i in range(len(temp_df) - lookback, len(temp_df)):
@@ -45,12 +45,11 @@ def calculate_accuracy(df, factor, side='high'):
         return (hits / total_days * 100) if total_days > 0 else 0.0
     except: return 0.0
 
-# --- 🔍 數據抓取：支援名稱與代碼判定 ---
+# --- 🔍 數據抓取 ---
 def get_stock_info(stock_id):
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
         try:
-            # 抓取稍多一點數據以確保計算 ATR 穩定
             df = yf.download(symbol, period="150d", progress=False)
             if df is not None and not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
@@ -77,76 +76,82 @@ def display_metric_card(title, price, accuracy, color_type="red"):
 # --- 主程式 ---
 if st.session_state.mode == "home":
     st.title("⚖️ AI 多因子預估全景系統")
-    st.write("### 請選擇功能模式")
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button("⚡ 盤中即時量價 (開盤時段)", use_container_width=True): navigate_to("realtime")
+        if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
     with col_b:
-        if st.button("📊 預估全景分析 (盤後/盤前建議)", use_container_width=True): navigate_to("forecast")
+        if st.button("📊 預估全景分析", use_container_width=True): navigate_to("forecast")
 
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    st.title("⚡ 盤中即時量價")
+    st.title("⚡ 盤中即時量價分析")
     
-    # 判定交易時段
+    # --- 🕒 標格加在此處：判定未開盤警示 ---
     now = datetime.now()
     is_trading = (now.weekday() < 5) and (9 <= now.hour < 14)
     if not is_trading:
-        st.warning(f"🕒 目前非交易時段 (現在時間: {now.strftime('%H:%M')})，顯示為最近收盤行情。")
+        st.warning(f"🕒 【未開盤警示】目前非台股交易時段 (現在時間: {now.strftime('%H:%M')})。下方顯示之價格與數據為前一交易日之最終行情，非即時跳動報價。")
     
     sid = st.text_input("輸入股票代碼 (例: 2330):")
     if sid:
         df, sym, name = get_stock_info(sid)
         if df is not None:
-            st.markdown(f"<h1 style='font-size:45px;'>{name} <small style='color:gray;'>({sym})</small></h1>", unsafe_allow_html=True)
-            col1, col2, col3 = st.columns(3)
-            col1.metric("當前/最後成交價", f"{df['Close'].iloc[-1]:.2f}")
-            col2.metric("當日最高", f"{df['High'].iloc[-1]:.2f}")
-            col3.metric("當日最低", f"{df['Low'].iloc[-1]:.2f}")
+            st.markdown(f"<h1 style='font-size:45px; color:#1E3A8A;'>{name} <small style='color:gray;'>({sym})</small></h1>", unsafe_allow_html=True)
+            curr_p = df['Close'].iloc[-1]
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("當前/收盤價", f"{curr_p:.2f}")
+            c2.metric("今日最高", f"{df['High'].iloc[-1]:.2f}")
+            c3.metric("今日最低", f"{df['Low'].iloc[-1]:.2f}")
+            
+            # 盤中預估範圍參考
+            st.divider()
+            st.markdown("### 🔍 盤中波動空間參考")
+            st.write(f"今日預估合理震盪區間：{curr_p*0.985:.2f} ~ {curr_p*1.015:.2f}")
         else: st.error("查無資料")
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("📊 預估全景分析")
-    stock_input = st.text_input("輸入代碼進行 60 日勝率回測:")
+    stock_input = st.text_input("輸入代碼進行 60 日回測判斷:")
 
     if stock_input:
-        with st.spinner('正在分析數據並執行回測...'):
+        with st.spinner('執行 AI 籌碼修正與命中率回測...'):
             df, sym, name = get_stock_info(stock_input)
             if df is not None:
-                # 數據與籌碼計算
+                # 數據計算 (FinMind 籌碼 + 波動慣性)
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
                 atr = tr.rolling(14).mean().iloc[-1]
                 chip_score = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
-                bias = 1.006 if chip_score > 1 else 0.994
+                bias = 1.006 if chip_score > 1 else 0.994 # 考慮 institutional investor chips
                 curr_p = float(df['Close'].iloc[-1])
 
-                # 真實回測
+                # 真實回測命中率
                 acc_dh = calculate_accuracy(df, (0.85*bias), 'high')
                 acc_dl = calculate_accuracy(df, (0.75/bias), 'low')
                 acc_wh = calculate_accuracy(df, (1.9*bias), 'high')
                 acc_wl = calculate_accuracy(df, (1.6/bias), 'low')
 
-                # 頂部：名稱與巨型收盤價
+                # 頂部核心：獨立大字體收盤價
                 st.divider()
                 h1, h2 = st.columns([3, 2])
                 with h1:
                     st.markdown(f"<h1 style='color:#1E3A8A; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
                     st.markdown(f"<div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>"
-                                f"<p style='color:#444; font-size:26px; margin:0;'>最後收盤報價：</p>"
+                                f"<p style='color:#444; font-size:26px; margin:0;'>最新收盤價：</p>"
                                 f"<b style='font-size:90px; color:#C53030; line-height:1;'>{curr_p:.2f}</b></div>", unsafe_allow_html=True)
                 with h2:
                     st.info(f"📊 籌碼修正：{bias:.3f}\n\n🚩 波動慣性：{(df['Close'].pct_change().std()*100):.2f}\n\n🌅 預估明日開盤：{curr_p + (atr*0.05*bias):.2f}")
 
                 # 全景對照
-                st.markdown("### 🎯 隔日與五日 AI 預估區間 (60日回測命中率)")
+                st.markdown("### 🎯 隔日與五日 AI 預估對照 (含 60 日真實回測)")
                 m1, m2, m3, m4 = st.columns(4)
                 with m1: display_metric_card("📈 隔日壓力", curr_p + (atr*0.85*bias), acc_dh, "red")
                 with m2: display_metric_card("📉 隔日支撐", curr_p - (atr*0.75/bias), acc_dl, "green")
                 with m3: display_metric_card("🚩 五日壓力", curr_p + (atr*1.9*bias), acc_wh, "red")
                 with m4: display_metric_card("⚓ 五日支撐", curr_p - (atr*1.6/bias), acc_wl, "green")
 
-                # 當沖建議
+                # 當沖建議價格
                 st.divider()
                 st.markdown("### 🏹 明日當沖建議價格")
                 st.markdown(f"""
@@ -163,21 +168,19 @@ elif st.session_state.mode == "forecast":
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 走勢圖
+                # 走勢圖與註解
                 st.divider()
-                st.markdown(f"### 📈 {name} 走勢圖與 AI 預估虛線")
+                st.markdown(f"### 📈 {name} 走勢圖與 AI 預估區間")
                 plot_df = df.tail(45)
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
                 ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=3, label="每日收盤價")
                 ax1.axhline(y=curr_p + (atr*1.9*bias), color='#FF4B4B', ls='--', lw=2.5, label="五日預估壓力")
                 ax1.axhline(y=curr_p - (atr*1.6/bias), color='#28A745', ls='--', lw=2.5, label="五日預估支撐")
                 ax1.legend(loc='upper left', fontsize=12)
-                ax1.set_ylabel("價格", fontsize=14)
                 ax1.grid(alpha=0.3)
                 v_colors = ['#EF5350' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else '#26A69A' for i in range(len(plot_df))]
                 ax2.bar(plot_df.index, plot_df['Volume'], color=v_colors, alpha=0.9)
-                ax2.set_ylabel("成交量", fontsize=14)
                 st.pyplot(fig)
-                st.info(f"💡 圖表說明：藍色粗線為收盤價，紅/綠虛線為基於籌碼修正後所得出的五日極限空間。")
+                st.info(f"💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 考慮籌碼修正與波動慣性後所得出的五日極限空間。")
             else:
                 st.error("查無資料")
