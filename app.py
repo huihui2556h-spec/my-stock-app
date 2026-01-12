@@ -96,6 +96,16 @@ def stock_box(label, price, pct, acc, color):
     """, unsafe_allow_html=True)
 
 # ================== 介面控制 ==================
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("⚡ 盤中即時量價", use_container_width=True):
+            st.session_state.mode = "realtime"
+            st.rerun()
+    with col_b:
+        if st.button("📊 隔日當沖及波段預估", use_container_width=True):
+            st.session_state.mode = "forecast"
+            st.rerun()
+            
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): 
         st.session_state.mode = "home"
@@ -246,5 +256,6 @@ elif st.session_state.mode == "forecast":
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
 
