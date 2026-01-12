@@ -223,8 +223,8 @@ elif st.session_state.mode == "forecast":
 
     if stock_id:
         with st.spinner('AI 多因子計算與回測中...'):
-            df, sym = fetch_stock_data(stock_id)
-                if not df.empty:
+             df, sym = fetch_stock_data(stock_id)
+             if not df.empty:
                 # --- 1. [數據計算區] ---
                 df = df.ffill()
                 name = get_stock_name(stock_id)
@@ -409,6 +409,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
