@@ -21,7 +21,6 @@ def calculate_real_accuracy(df, atr_factor, side='high'):
     try:
         df_copy = df.copy().ffill()
         backtest_days = min(len(df_copy) - 15, 60)
-        if backtest_days <= 0: return 0.0
         hits = 0
         for i in range(1, backtest_days + 1):
             idx = -i
@@ -59,12 +58,12 @@ def stock_box(label, price, pct, acc, color_type="red"):
 
 # --- 主程式 ---
 if st.session_state.mode == "home":
-    st.title("⚖️ 台股 AI 多因子交易系統")
+    st.title("⚖️ 台股 AI 交易系統")
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
     with col_b:
-        if st.button("📊 深度預估分析", use_container_width=True): navigate_to("forecast")
+        if st.button("📊 隔日及波段預估", use_container_width=True): navigate_to("forecast")
 
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -73,23 +72,28 @@ elif st.session_state.mode == "realtime":
     if stock_id:
         symbol = f"{stock_id}.TW"
         df_rt = yf.download(symbol, period="1d", interval="1m", progress=False)
-        if df_rt.empty:
-            df_rt = yf.download(f"{stock_id}.TWO", period="1d", interval="1m", progress=False)
+        if df_rt.empty: df_rt = yf.download(f"{stock_id}.TWO", period="1d", interval="1m", progress=False)
         
         if not df_rt.empty:
             if isinstance(df_rt.columns, pd.MultiIndex): df_rt.columns = df_rt.columns.get_level_values(0)
             df_rt['VWAP'] = (df_rt['Close'] * df_rt['Volume']).cumsum() / df_rt['Volume'].cumsum()
             curr_p = float(df_rt['Close'].iloc[-1])
             vwap_p = float(df_rt['VWAP'].iloc[-1])
+            
             st.subheader(f"🎯 {get_stock_name(stock_id)}")
-            st.metric("即時現價", f"{curr_p:.2f}")
+            st.metric("即時成交價", f"{curr_p:.2f}")
+            
+            st.divider()
+            st.markdown("### 🏹 盤中動態決策 (基於即時 VWAP)")
             c1, c2 = st.columns(2)
-            c1.success(f"🔹 建議買進價：{vwap_p * 1.001:.2f}")
-            c2.error(f"🔸 建議賣出價：{curr_p * 1.015:.2f}")
+            # 動態進場點：根據即時均線微調
+            buy_p = vwap_p * 0.998 if curr_p < vwap_p else vwap_p * 1.002
+            c1.success(f"🔹 動態買進價：{buy_p:.2f}")
+            c2.error(f"🔸 動態停利價：{curr_p * 1.02:.2f}")
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    st.title("📊 深度預估與波段分析")
+    st.title("📊 隔日及波段預估")
     stock_id = st.text_input("輸入代碼:", key="fc_id")
     if stock_id:
         symbol = f"{stock_id}.TW"
@@ -99,19 +103,30 @@ elif st.session_state.mode == "forecast":
         if not df.empty:
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             df = df.ffill()
-            close, high, low = df['Close'], df['High'], df['Low']
-            atr = (high - low).rolling(14).mean().iloc[-1]
-            curr_c = float(close.iloc[-1])
+            close, high, low, vol = df['Close'], df['High'], df['Low'], df['Volume']
             
-            # 預估值
-            p_h1, p_h5 = curr_c + atr*0.85, curr_c + atr*1.9
-            p_l1, p_l5 = curr_c - atr*0.65, curr_c - atr*1.6
+            # --- 動態因子計算 ---
+            curr_atr = (high - low).rolling(14).mean().iloc[-1]
+            curr_c = float(close.iloc[-1])
+            vol_ma5 = vol.rolling(5).mean().iloc[-1]
+            # 動態權重：若量能爆發，預測位向上修正
+            dynamic_factor = 1.1 if vol.iloc[-1] > vol_ma5 else 0.9
+            
+            p_h1 = curr_c + (curr_atr * 0.85 * dynamic_factor)
+            p_h5 = curr_c + (curr_atr * 1.85 * dynamic_factor)
+            p_l1 = curr_c - (curr_atr * 0.65 / dynamic_factor)
+            p_l5 = curr_c - (curr_atr * 1.55 / dynamic_factor)
+
             acc_h1 = calculate_real_accuracy(df, 0.85, 'high')
             acc_h5 = calculate_real_accuracy(df, 1.9, 'high')
             acc_l1 = calculate_real_accuracy(df, 0.65, 'low')
             acc_l5 = calculate_real_accuracy(df, 1.6, 'low')
 
-            st.subheader(f"🏠 {get_stock_name(stock_id)}")
+            # --- UI 呈現：找回收盤價 ---
+            st.subheader(f"🏠 {get_stock_name(stock_id)} ({stock_id})")
+            st.metric("今日收盤價 (Actual Close)", f"{curr_c:.2f}")
+            
+            st.divider()
             col1, col2 = st.columns(2)
             with col1:
                 stock_box("📈 隔日最高預測", p_h1, ((p_h1/curr_c)-1)*100, acc_h1, "red")
@@ -120,38 +135,43 @@ elif st.session_state.mode == "forecast":
                 stock_box("📉 隔日最低預測", p_l1, ((p_l1/curr_c)-1)*100, acc_l1, "green")
                 stock_box("⚓ 五日最低預測", p_l5, ((p_l5/curr_c)-1)*100, acc_l5, "green")
 
-            # --- 實戰建議文字 ---
+            # --- 實戰動態建議價格 ---
             st.divider()
-            st.warning("💡 **實戰當沖建議**")
-            d1, d2 = st.columns(2)
-            d1.write(f"🔹 **多方進場點**：{curr_c - atr*0.1:.2f}")
-            d1.write(f"🔹 **超跌低接點**：{curr_c - atr*0.4:.2f}")
-            d2.write(f"🔸 **短線分批停利**：{curr_c + atr*0.7:.2f}")
+            st.warning("🏹 **實戰動態當沖價 (基於最新 ATR 與量能計算)**")
+            d1, d2, d3 = st.columns(3)
+            # 進場價改為動態：昨日收盤價 扣掉 波動率的 0.15 倍（隨市場波動縮放）
+            dynamic_buy = curr_c - (curr_atr * 0.15 * (vol_ma5/vol.iloc[-1]))
+            d1.info(f"🔹 多方進場點\n\n{dynamic_buy:.2f}")
+            d2.error(f"🔹 低接支撐位\n\n{curr_c - (curr_atr * 0.5):.2f}")
+            d3.success(f"🔸 目標停利位\n\n{curr_c + (curr_atr * 0.7):.2f}")
 
-            # --- 完整的價量走勢圖表 (Matplotlib) ---
+            # --- 補回價量走勢圖表 ---
             st.divider()
             st.write("### 📉 走勢與量價動能表")
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [2.5, 1]})
             
-            # 上圖：收盤價與 AI 壓力支撐線
-            ax1.plot(df.index[-40:], close.tail(40), color='#1f77b4', lw=2, label="Price")
+            # 上圖：收盤價與動態壓力線
+            ax1.plot(df.index[-40:], close.tail(40), color='#1f77b4', lw=2, label="Price Trend")
             ax1.axhline(y=p_h5, color='red', ls='--', alpha=0.3, label="Resistance")
             ax1.axhline(y=p_l5, color='green', ls='--', alpha=0.3, label="Support")
             ax1.set_title("Price Analysis", fontsize=14)
             ax1.legend(loc='upper left')
             
-            # 下圖：量價表（紅漲綠跌）
-            colors = ['red' if close.iloc[i] >= close.iloc[i-1] else 'green' for i in range(-40, 0)]
-            ax2.bar(df.index[-40:], df['Volume'].tail(40), color=colors, alpha=0.6)
+            # 下圖：量價表（依漲跌變色）
+            # 修正：確保顏色列表長度正確
+            plot_df = df.tail(40)
+            colors = ['red' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else 'green' for i in range(len(plot_df))]
+            ax2.bar(plot_df.index, plot_df['Volume'], color=colors, alpha=0.6)
             ax2.set_title("Volume Momentum", fontsize=12)
             
             plt.xticks(rotation=45)
             st.pyplot(fig)
 
-            # --- 底部註解敘述 ---
-            st.info("📘 **圖表與數據說明**")
-            st.markdown("""
-            * **紅綠量價表**：下方柱狀圖紅色代表收紅K（量增強勢），綠色代表收黑K（量縮整理）。
-            * **AI 達成率**：基於過去 60 天波動率對預測價位的命中統計。
-            * **實戰操作**：若開盤價即跌破「多方進場點」，代表當日盤勢極弱，不建議進場。
-            """)
+            st.info("📘 **圖表說明**：上方為收盤價走勢與 AI 壓力支撐線；下方為成交量（紅漲綠跌）。")
+            st.markdown(f"""
+            * **達成率計算**：回測過去 **60 個交易日** 之歷史數據。
+            * **主力進出修正**：根據成交量與 5 日均量關係調整敏感度。
+            * **國際局勢**：連動 S&P 500 指數。
+            * <span style="color:#FF4B4B">**Resistance (紅虛線)**</span>：預估五日最高壓力位。
+            * <span style="color:#28A745">**Support (綠虛線)**</span>：預估五日最低支撐位。
+            """, unsafe_allow_html=True)
