@@ -281,11 +281,11 @@ if stock_id:
                 st.divider()
                 st.markdown("### 🏹 明日當沖建議價格")
                 d1, d2, d3 = st.columns(3)
-               with d1:
+                with d1:
                  st.markdown(f'<div style="background:#EBF8FF; padding:20px; border-radius:10px; border: 1px solid #BEE3F8; text-align:center;"><b style="color:#2C5282;">🔹 強勢追多</b><br><h2 style="color:#2B6CB0; margin:10px 0;">{est_open-(atr*0.1):.2f}</h2></div>', unsafe_allow_html=True)
-               with d2:
+                with d2:
                  st.markdown(f'<div style="background:#FFF5F5; padding:20px; border-radius:10px; border: 1px solid #FED7D7; text-align:center;"><b style="color:#9B2C2C;">🔹 低接買點</b><br><h2 style="color:#C53030; margin:10px 0;">{curr_c-(atr*0.45):.2f}</h2></div>', unsafe_allow_html=True)
-               with d3:
+                with d3:
                  st.markdown(f'<div style="background:#F0FFF4; padding:20px; border-radius:10px; border: 1px solid #C6F6D5; text-align:center;"><b style="color:#22543D;">🔸 短線獲利</b><br><h2 style="color:#38A169; margin:10px 0;">{curr_c+(atr*0.75):.2f}</h2></div>', unsafe_allow_html=True)
 
                 # --- 📈 修正圖片亂碼與排版 ---
@@ -313,6 +313,7 @@ if stock_id:
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
 
 
