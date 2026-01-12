@@ -267,9 +267,7 @@ elif st.session_state.mode == "forecast":
                 # 修正預估開盤：符合台股跳動單位 [cite: 2026-01-12]
                 est_open = round(est_open_raw / tick) * tick
 
-            # --- 3. [修正顯示數值] ---
-            # 確保介面上顯示的是經過修正的波動慣性
-                vol_inertia = adjusted_inertia
+           
                 # --- 2. [動態變色邏輯] ---
                 price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
                 price_change_pct = (curr_c - prev_close) / prev_close * 100
@@ -407,6 +405,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
