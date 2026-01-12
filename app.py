@@ -8,11 +8,26 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib
 
-# --- 0. 設置環境與字體 (解決圖片亂碼) ---
-matplotlib.rc('font', family='Microsoft JhengHei' if 'Win' in str(matplotlib.get_backend()) else 'sans-serif')
-plt.rcParams['axes.unicode_minus'] = False 
+# --- 0. 徹底解決圖片亂碼設定 ---
+def set_mpl_font():
+    # 針對 Windows/Mac/Linux 自動嘗試可用中文字體
+    fonts = ['Microsoft JhengHei', 'Arial Unicode MS', 'SimHei', 'sans-serif']
+    for f in fonts:
+        try:
+            matplotlib.rc('font', family=f)
+            # 測試繪圖是否會報錯
+            plt.figure()
+            plt.close()
+            break
+        except:
+            continue
+    # 解決座標軸負號顯示問題
+    plt.rcParams['axes.unicode_minus'] = False 
 
-st.set_page_config(page_title="AI 全景預估系統", layout="wide")
+set_mpl_font()
+
+# 頁面配置
+st.set_page_config(page_title="AI 全景預估系統 Pro", layout="wide")
 
 if 'mode' not in st.session_state:
     st.session_state.mode = "home"
@@ -25,7 +40,7 @@ def navigate_to(new_mode):
 def calculate_accuracy(df, factor, side='high'):
     try:
         temp_df = df.copy().ffill()
-        lookback = 60 # 2026-01-12 指示：回測 60 天
+        lookback = 60 # 2026-01-12 指示：回測過去 60 天
         if len(temp_df) < lookback + 15: return 0.0
         hits, total_days = 0, 0
         for i in range(len(temp_df) - lookback, len(temp_df)):
@@ -45,7 +60,7 @@ def calculate_accuracy(df, factor, side='high'):
         return (hits / total_days * 100) if total_days > 0 else 0.0
     except: return 0.0
 
-# --- 🔍 數據抓取：支援名稱與代碼判定 ---
+# --- 🔍 數據抓取 ---
 def get_stock_info(stock_id):
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
@@ -75,7 +90,7 @@ def display_metric_card(title, price, accuracy, color_type="red"):
 
 # --- 主程式 ---
 if st.session_state.mode == "home":
-    st.title("⚖️ 台股 AI 交易助手 Pro")
+    st.title("⚖️ AI 多因子交易助手 Pro")
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
@@ -85,28 +100,24 @@ if st.session_state.mode == "home":
 elif st.session_state.mode == "realtime":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("⚡ 盤中即時量價")
-    
-    # 判定未開盤警示
     now = datetime.now()
     is_trading = (now.weekday() < 5) and (9 <= now.hour < 14)
     if not is_trading:
-        st.warning(f"🕒 【未開盤警示】目前非台股交易時段。下方顯示之價格與數據為前一交易日行情。")
-    
-    sid = st.text_input("輸入股票代碼:")
+        st.warning(f"🕒 【未開盤警示】目前非台股交易時段。下方顯示為前一交易日行情。")
+    sid = st.text_input("輸入代碼:")
     if sid:
         df, sym, name = get_stock_info(sid)
         if df is not None:
-            st.markdown(f"<h1 style='font-size:45px; color:#000;'>{name} <small style='color:gray;'>({sym})</small></h1>", unsafe_allow_html=True)
+            st.markdown(f"<h1 style='font-size:45px; color:#000;'>{name} ({sym})</h1>", unsafe_allow_html=True)
             st.metric("最新成交價", f"{df['Close'].iloc[-1]:.2f}")
         else: st.error("查無資料")
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    st.title("📊 隔日當沖與波段預估") # 恢復原始標題
+    st.title("📊 隔日當沖與波段預估")
     stock_input = st.text_input("輸入代碼進行 60 日勝率回測:")
-
     if stock_input:
-        with st.spinner('執行 AI 籌碼修正與命中率回測...'):
+        with st.spinner('執行分析中...'):
             df, sym, name = get_stock_info(stock_input)
             if df is not None:
                 # 數據計算 (FinMind 籌碼 + 波動慣性)
@@ -121,7 +132,7 @@ elif st.session_state.mode == "forecast":
                 acc_wh = calculate_accuracy(df, (1.9*bias), 'high')
                 acc_wl = calculate_accuracy(df, (1.6/bias), 'low')
 
-                # 頂部核心：名稱與巨型收盤價
+                # 頂部核心：名稱與巨型收盤價 (獨立欄位)
                 st.divider()
                 h1, h2 = st.columns([3, 2])
                 with h1:
@@ -157,7 +168,7 @@ elif st.session_state.mode == "forecast":
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 走勢圖與註解
+                # 走勢圖與註解 (解決亂碼)
                 st.divider()
                 st.markdown(f"### 📈 {name} 走勢圖與 AI 預估區間")
                 plot_df = df.tail(45)
@@ -170,6 +181,6 @@ elif st.session_state.mode == "forecast":
                 v_colors = ['#EF5350' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else '#26A69A' for i in range(len(plot_df))]
                 ax2.bar(plot_df.index, plot_df['Volume'], color=v_colors, alpha=0.9)
                 st.pyplot(fig)
-                st.info(f"💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 考慮籌碼修正後預估之五日極限空間。")
+                st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 考慮籌碼修正與波動慣性後所得出的五日極限空間。")
             else:
                 st.error("查無資料")
