@@ -202,9 +202,10 @@ elif st.session_state.mode == "forecast":
             df, sym = fetch_stock_data(stock_id)
             if not df.empty:
                 # --- 1. [核心計算區] 先算完所有變數 ---
-                name = get_stock_name(stock_id)
                 df = df.ffill()
-                curr_c = float(df['Close'].iloc[-1])
+                name = get_stock_name(stock_id)
+                curr_c = float(df['Close'].iloc[-1]) # 今日收盤
+                prev_close = float(df['Close'].iloc[-2]) # 昨收價判斷漲跌
 
                 # 2026-01-12 指示：籌碼與慣性計算
                 chip_score = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
@@ -213,6 +214,9 @@ elif st.session_state.mode == "forecast":
                 atr = tr.rolling(14).mean().iloc[-1]
                 est_open = curr_c + (atr * 0.05 * bias)
                 vol_inertia = (df['Close'].pct_change().std() * 100)
+
+                price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
+                price_change_pct = (curr_c - prev_close) / prev_close * 100
 
                 # 計算 60 日真實回測命中率
                 acc_dh = calculate_real_accuracy(df, 0.85 * bias, 'high')
@@ -283,6 +287,7 @@ elif st.session_state.mode == "forecast":
             else:
                 st.error("❌ 查無資料，請確認代碼。")
             
+
 
 
 
