@@ -138,46 +138,35 @@ elif st.session_state.mode == "realtime":
         
     st.title("⚡ 盤中即時量價（當沖）")
 
-    # 設定台灣時區判斷開盤
+    # 1. 設定台灣時區與時間判斷
     tw_tz = pytz.timezone("Asia/Taipei")
+    now = datetime.now(tw_tz)
+    # 交易時間判斷：週一至週五 09:00 ~ 13:30
+    is_market_open = now.weekday() < 5 and (time(9, 0) <= now.time() <= time(13, 30))
+
     stock_id = st.text_input("輸入股票代碼（如：2330）")
 
     if stock_id:
-        # 1. 抓取數據 (使用較短 period 以獲取更靈敏的即時變動)
         df, sym = fetch_stock_data(stock_id, period="60d")
         
         if df.empty:
             st.error("❌ 查無資料，請檢查代碼是否正確。")
         else:
-            # --- [數據基礎定義] ---
+            # --- [基礎數據準備] ---
             df = df.ffill()
             name = get_stock_name(stock_id)
             curr_price = float(df['Close'].iloc[-1])
             prev_close = float(df['Close'].iloc[-2])
-            
-            # --- [A. 交易時段判定與標語] ---
-            now = datetime.now(tw_tz)
-            # 判斷週一至週五 09:00 - 13:30
-            is_market_open = now.weekday() < 5 and (9 <= now.hour < 13 or (now.hour == 13 and now.minute <= 30))
-
-            if not is_market_open:
-                st.warning(f"🕒 【目前非交易時段】系統暫停動態演算。現在時間：{now.strftime('%H:%M')}。")
-            else:
-                st.success(f"🟢 【盤中 AI 動態監控中】數據隨量價即時校正。")
-
-            # --- [B. 亮底深字：最新收盤卡片] ---
             price_diff = curr_price - prev_close
             active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
-            
+
+            # --- [2. 亮底深字：最新報價卡片 (不論開盤與否都顯示基礎資訊)] ---
             st.markdown(f"""
                 <style>
-                    @media (max-width: 600px) {{
-                        .main-price {{ font-size: 52px !important; }}
-                        .data-row {{ flex-direction: column !important; gap: 10px !important; }}
-                    }}
+                    @media (max-width: 600px) {{ .main-price {{ font-size: 52px !important; }} }}
                 </style>
                 <div style='background: #FFFFFF; padding: 25px; border-radius: 18px; border-left: 12px solid {active_color}; border: 1px solid #E2E8F0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);'>
-                    <div style='color: #0F172A; font-size: 28px; font-weight: 800;'>{name} <span style='color:gray; font-weight:400;'>({sym})</span></div>
+                    <div style='color: #0F172A; font-size: 28px; font-weight: 800;'>{name} ({sym})</div>
                     <div style='display: flex; align-items: baseline; flex-wrap: wrap; margin-top:10px;'>
                         <b class='main-price' style='font-size: 70px; color: {active_color}; line-height: 1;'>{curr_price:.2f}</b>
                         <div style='margin-left: 15px;'>
@@ -192,33 +181,40 @@ elif st.session_state.mode == "realtime":
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- [C. 核心：動態非公式演算邏輯] ---
-            # 1. 波動度：使用最近 20 日/分標準差，反映當下真實震幅
-            recent_std = df['Close'].tail(20).std()
-            
-            # 2. 量能係數：即時成交量與 5 日均量比 [2026-01-12 指示]
-            vol_ma5 = df['Volume'].tail(5).mean()
-            curr_vol = df['Volume'].iloc[-1]
-            instant_vol_factor = curr_vol / vol_ma5
-            
-            # 3. 動態點位：量能越大，支撐越下撤(防殺盤)，壓力越上推(看突破)
-            # 徹底捨棄固定 0.35/0.55
-            dynamic_buy = curr_price - (recent_std * (1.2 / instant_vol_factor))
-            dynamic_sell = curr_price + (recent_std * (1.5 * instant_vol_factor))
-            
-            # 4. 對齊 Tick Size (台積電 5 元規則)
-            tick = get_tick_size(curr_price)
-            buy_point = round(dynamic_buy / tick) * tick
-            sell_target = round(dynamic_sell / tick) * tick
-            expected_return = (sell_target - buy_point) / buy_point * 100
-
-            # --- [D. 顯示區：盤中動態點位] ---
             st.divider()
-            if is_market_open:
-                st.subheader("🎯 當沖 AI 動態演算點位")
+
+            # --- [3. 關鍵邏輯：未開盤僅顯示警示，盤中才計算動態預測] ---
+            if not is_market_open:
+                # 未開盤：顯示警示標語，並停止執行後續預測
+                st.warning(f"🕒 【目前非交易時段】系統暫停動態演算。現在時間：{now.strftime('%H:%M')}。")
+                st.info("💡 盤中 AI 建議點位將於台股開盤時間 (09:00 - 13:30) 自動啟動即時演算。")
+            else:
+                # 盤中時間：顯示動態預測 [cite: 2026-01-12]
+                st.success(f"🟢 【盤中 AI 動態監控中】數據隨量價即時校正")
                 
-                # 手機版自動轉直排的佈局
+                # --- [動態數據演算：捨棄死板公式] ---
+                # 使用最近 20 分鐘的波動標準差，反映市場情緒
+                recent_std = df['Close'].tail(20).std()
+                # 即時量能係數：反應籌碼推動力道 [cite: 2026-01-12]
+                curr_vol = df['Volume'].iloc[-1]
+                vol_ma5 = df['Volume'].tail(5).mean()
+                instant_vol_factor = curr_vol / vol_ma5
+                
+                # 動態買賣點演算
+                # 買點隨量能增加而下退(防殺盤)，賣點隨量能增加而上推(看突破)
+                dynamic_buy = curr_price - (recent_std * (1.2 / instant_vol_factor))
+                dynamic_sell = curr_price + (recent_std * (1.5 * instant_vol_factor))
+                
+                # 對齊台股 Tick Size [cite: 2026-01-12]
+                tick = get_tick_size(curr_price)
+                buy_point = round(dynamic_buy / tick) * tick
+                sell_target = round(dynamic_sell / tick) * tick
+                expected_return = (sell_target - buy_point) / buy_point * 100
+
+                # --- [顯示當沖 AI 建議點位] ---
+                st.subheader("🎯 當沖 AI 動態演算建議")
                 d1, d2, d3 = st.columns(3)
+                
                 with d1:
                     st.markdown(f"""
                         <div style="background:#F0F9FF; padding:20px; border-radius:12px; border-left:8px solid #3182CE; text-align:center;">
@@ -240,7 +236,7 @@ elif st.session_state.mode == "realtime":
                             <h2 style="color:#2F855A; margin:10px 0;">{expected_return:.2f}%</h2>
                         </div>
                     """, unsafe_allow_html=True)
-                
+                  
                 if expected_return < 1.2:
                     st.info("💡 目前即時波動率極低，建議等待量能噴發後再參考點位。")
 
@@ -467,6 +463,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
