@@ -297,27 +297,40 @@ elif st.session_state.mode == "forecast":
                 # --- 🎯 補充說明註解 (根據您的指示強化) ---
                 # 取得執行當下的時間
                 tw_tz = pytz.timezone("Asia/Taipei")
-                current_date = datetime.now(tw_tz).strftime('%Y-%m-%d')
+                current_time = datetime.now(tw_tz)
+                current_date_str = current_time.strftime('%Y-%m-%d')
+                current_hm_str = current_time.strftime('%H:%M')
+                # 計算今日漲跌幅
+                daily_change_pct = (curr_c - prev_close) / prev_close * 100
 
-                st.info(f"📋 **AI 數據自動化偵測報告 ({current_date})**")
+                st.info(f"📋 **AI 數據動態分析報告 (分析基準日：{current_date_str} {current_hm_str})**")
 
 # 建立兩欄式動態註解
                 note1, note2 = st.columns(2)
 
-                with note1:
-    # 根據 bias 變數自動生成「籌碼評論」
-                  chip_status = "帶量擴張" if bias > 1 else "量縮盤整"
-                  chip_advice = "AI 已自動調高壓力位預期" if bias > 1 else "AI 已自動收斂預估空間"
-    
-                  st.markdown(f"""
-                  **1. 籌碼流向動態：** - 今日成交量對比均量呈現 **{chip_status}**。
-                  - 籌碼修正係數為 `{bias:.3f}`，{chip_advice}。
-    
-                  **2. 價格波動慣性：** - 根據最新 ATR 波動率 `{atr:.2f}` 計算。
-                  - 預估明日開盤在 `{est_open:.2f}` 附近。若開盤高於此價，代表多方強勢。
-                  """)
+                with note_col1:
+    # 根據 bias (籌碼修正) 與 漲跌幅 自動生成文字內容
+                if daily_change_pct > 7 and bias > 1.05:
+                  status_text = "🔥 強勢攻擊盤 (帶量噴發)"
+                  status_desc = "今日漲幅極大且帶量，慣性已突破 ATR 常態區間。壓力位僅供參考。"
+                elif daily_change_pct < -7 and bias > 1.05:
+                  status_text = "❄️ 恐慌下跌盤 (放量殺低)"
+                  status_desc = "偵測到過度下跌因素，下跌慣性強烈。支撐位可能失守，請謹慎接刀。"
+                else:
+                  status_text = "帶量擴張" if bias > 1 else "量縮盤整"
+                  status_desc = f"目前籌碼修正係數為 {bias:.3f}，AI 已自動調整預估區間。"
 
-                with note2:
+                st.markdown(f"""
+                **1. 籌碼與盤態判斷：**
+                - 今日盤態：**{status_text}**
+                - 說明：{status_desc}
+    
+                **2. 價格波動慣性：**
+                - 14 日 ATR 波動均幅：`{atr:.2f}`
+                - 預估明日開盤慣性：`{est_open:.2f}` (此數值會隨每日數據自動重算)
+                """)
+
+                with note_col2:
     # 根據命中率(acc_dh)自動生成「信心評論」
     # 這裡使用您之前算好的 acc_dh 作為信心指標
                  confidence_level = "核心參考" if acc_dh > 85 else "謹慎參考"
@@ -335,6 +348,7 @@ elif st.session_state.mode == "forecast":
 
                 
                  st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
