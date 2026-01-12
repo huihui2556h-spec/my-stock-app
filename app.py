@@ -201,59 +201,61 @@ elif st.session_state.mode == "forecast":
         with st.spinner('AI 多因子計算與回測中...'):
             df, sym = fetch_stock_data(stock_id)
             if not df.empty:
-                # --- 1. [核心計算區] 先算完所有變數 ---
+                # --- 1. [數據計算區] 必須排在顯示之前 ---
                 df = df.ffill()
                 name = get_stock_name(stock_id)
-                curr_c = float(df['Close'].iloc[-1]) # 今日收盤
-                prev_close = float(df['Close'].iloc[-2]) # 昨收價判斷漲跌
-
-                # 2026-01-12 指示：籌碼與慣性計算
+                curr_c = float(df['Close'].iloc[-1])    # 今日收盤
+                prev_close = float(df['Close'].iloc[-2]) # 昨收價 (用於判定紅綠)
+                
+                # [2026-01-12 指示] 籌碼修正與慣性計算 [cite: 2026-01-12]
                 chip_score = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
-                bias = 1.006 if chip_score > 1 else 0.994
+                bias = 1.006 if chip_score > 1 else 0.994 # 法人籌碼補償 [cite: 2026-01-12]
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
                 atr = tr.rolling(14).mean().iloc[-1]
-                est_open = curr_c + (atr * 0.05 * bias)
-                vol_inertia = (df['Close'].pct_change().std() * 100)
+                est_open = curr_c + (atr * 0.05 * bias) # 預估開盤價 [cite: 2026-01-12]
+                vol_inertia = (df['Close'].pct_change().std() * 100) # 波動慣性 [cite: 2026-01-12]
 
+                # --- 2. [動態變色邏輯] ---
                 price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
                 price_change_pct = (curr_c - prev_close) / prev_close * 100
 
-                # 計算 60 日真實回測命中率
+                # --- 3. [頂部核心顯示區] 巨型變色收盤價 ---
+                st.divider()
+                h1, h2 = st.columns([3, 2])
+                with h1:
+                    # 股票名稱
+                    st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
+                    # 收盤價區塊：依昨收價動態變色
+                    st.markdown(f"""
+                        <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid {price_color}; margin-top:15px;'>
+                            <p style='color:#444; font-size:24px; margin:0;'>最新收盤報價：</p>
+                            <div style='display: flex; align-items: baseline;'>
+                                <b style='font-size:90px; color:{price_color}; line-height:1;'>{curr_c:.2f}</b>
+                                <span style='font-size:28px; color:{price_color}; margin-left:15px; font-weight:bold;'>
+                                    ({'▲' if curr_c >= prev_close else '▼'} {abs(price_change_pct):.2f}%)
+                                </span>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with h2:
+                    st.info(f"📊 籌碼修正：{bias:.3f} | 🚩 波動慣性：{vol_inertia:.2f} | 🌅 預估明日開盤：{est_open:.2f}")
+
+                # --- 4. [命中率與卡片顯示區] ---
+                # 計算 60 日真實回測命中率 [cite: 2026-01-12]
                 acc_dh = calculate_real_accuracy(df, 0.85 * bias, 'high')
                 acc_dl = calculate_real_accuracy(df, 0.65 / bias, 'low')
                 acc_wh = calculate_real_accuracy(df, 1.9 * bias, 'high')
                 acc_wl = calculate_real_accuracy(df, 1.6 / bias, 'low')
-              
-                # --- 1. 計算漲跌色標邏輯 ---
-                # 獲取昨收價 (最後一筆是今日，倒數第二筆是昨收)
-                prev_close = float(df['Close'].iloc[-2]) 
-                # 判斷顏色：台股習慣紅漲綠跌
-                price_color = "#C53030" if curr_c >= prev_close else "#2F855A" 
-                # 漲跌百分比計算
-                price_change_pct = (curr_c - prev_close) / prev_close * 100
 
-                # --- 2. [頂部核心顯示區] 巨型收盤價與籌碼資訊 ---
                 st.divider()
-                h1, h2 = st.columns([3, 2])
-                with h1:
-                    st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
-                    st.markdown(f"""
-                        <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>
-                            <p style='color:#444; font-size:26px; margin:0;'>最新收盤報價：</p>
-                            <b style='font-size:90px; color:#C53030; line-height:1;'>{curr_c:.2f}</b>
-                        </div>
-                    """, unsafe_allow_html=True)
-                with h2:
-                    st.info(f"📊 籌碼修正：{bias:.3f} ({'法人偏多' if bias > 1 else '法人偏空'})\n\n🚩 波動慣性：{vol_inertia:.2f}\n\n🌅 預估明日開盤：{est_open:.2f}")
-
-                # --- 3. [壓力支撐區] 四欄並列 (修正圖片中的擠壓問題) ---
-                st.subheader(f"🏠 {name} ({stock_id}) 預估分析")
+                st.markdown("### 🎯 隔日與五日 AI 預估區間 (60日回測)")
                 m1, m2, m3, m4 = st.columns(4)
-                # 這裡確保使用正確定義的變數，解決 NameError
-                with m1: stock_box("📈 隔日壓力", curr_c + atr * 0.85 * bias, ((curr_c + atr * 0.85 * bias) / curr_c - 1) * 100, acc_dh, "red")
-                with m2: stock_box("📉 隔日支撐", curr_c - atr * 0.65 / bias, ((curr_c - atr * 0.65 / bias) / curr_c - 1) * 100, acc_dl, "green")
-                with m3: stock_box("🚩 五日壓力", curr_c + atr * 1.9 * bias, ((curr_c + atr * 1.9 * bias) / curr_c - 1) * 100, acc_wh, "red")
-                with m4: stock_box("⚓ 五日支撐", curr_c - atr * 1.6 / bias, ((curr_c - atr * 1.6 / bias) / curr_c - 1) * 100, acc_wl, "green")
+                with m1: stock_box("📈 隔日壓力", curr_c + atr*0.85*bias, ((curr_c + atr*0.85*bias)/curr_c - 1)*100, acc_dh, "red")
+                with m2: stock_box("📉 隔日支撐", curr_c - atr*0.65/bias, ((curr_c - atr*0.65/bias)/curr_c - 1)*100, acc_dl, "green")
+                with m3: stock_box("🚩 五日壓力", curr_c + atr*1.9*bias, ((curr_c + atr*1.9*bias)/curr_c - 1)*100, acc_wh, "red")
+                with m4: stock_box("⚓ 五日支撐", curr_c - atr*1.6/bias, ((curr_c - atr*1.6/bias)/curr_c - 1)*100, acc_wl, "green")
+
+                # ... (後續接當沖建議與圖表)
 
                 # --- 4. [當沖建議區] 彩色橫向方塊 ---
                 st.divider()
@@ -287,6 +289,7 @@ elif st.session_state.mode == "forecast":
             else:
                 st.error("❌ 查無資料，請確認代碼。")
             
+
 
 
 
