@@ -308,7 +308,7 @@ elif st.session_state.mode == "forecast":
 # 建立兩欄式動態註解
                 note1, note2 = st.columns(2)
 
-                with note_col1:
+                with note1:
     # 根據 bias (籌碼修正) 與 漲跌幅 自動生成文字內容
                  if daily_change_pct > 7 and bias > 1.05:
                   status_text = "🔥 強勢攻擊盤 (帶量噴發)"
@@ -330,7 +330,7 @@ elif st.session_state.mode == "forecast":
                   - 預估明日開盤慣性：`{est_open:.2f}` (此數值會隨每日數據自動重算)
                   """)
 
-                 with note_col2:
+                 with note2:
     # 根據命中率(acc_dh)自動生成「信心評論」
     # 這裡使用您之前算好的 acc_dh 作為信心指標
                   confidence_level = "核心參考" if acc_dh > 85 else "謹慎參考"
@@ -348,6 +348,7 @@ elif st.session_state.mode == "forecast":
 
                 
                   st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
