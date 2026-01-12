@@ -21,7 +21,6 @@ if 'mode' not in st.session_state:
 
 def navigate_to(new_mode):
     st.session_state.mode = new_mode
-    st.experimental_rerun()
 
 # --- 真實回測命中率 ---
 def calculate_real_accuracy(df, factor, side='high'):
@@ -84,10 +83,12 @@ def stock_box(label, price, pct, acc, color):
 if st.session_state.mode=="home":
     st.title("⚖️ 台股 AI 交易決策系統")
     col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("⚡ 盤中即時量價", use_container_width=True): navigate_to("realtime")
-    with col_b:
-        if st.button("📊 隔日當沖及波段預估", use_container_width=True): navigate_to("forecast")
+with col_a:
+    if st.button("⚡ 盤中即時量價", use_container_width=True):
+        st.session_state.mode = "realtime"
+with col_b:
+    if st.button("📊 隔日當沖及波段預估", use_container_width=True):
+        st.session_state.mode = "forecast"
 
 # ================== 盤中即時 ==================
 elif st.session_state.mode=="realtime":
@@ -203,3 +204,4 @@ elif st.session_state.mode=="forecast":
                 3. 建議買賣價以 ATR 波動估算，當風報比未達 1.5% 不建議進場。
                 4. 壓力/支撐與當沖建議價格可作為操作參考，非投資建議。
                 """)
+
