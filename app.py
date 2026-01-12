@@ -307,6 +307,8 @@ elif st.session_state.mode == "forecast":
 
 
                 # --- [2. 排版優化區：解決手機對比與字體問題] ---
+                clean_name = name.split('(')[0].split('-')[0].strip()
+                
                 st.markdown(f"""
                     <style>
                         /* 手機端自動縮小大字體 */
@@ -317,7 +319,7 @@ elif st.session_state.mode == "forecast":
                     </style>
 
                     <div style='background: #FFFFFF; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.05);'>
-                        <h2 style='color: #1E293B; margin: 0; font-size: 24px;'>{name} ({sym})</h2>
+                        <h2 style='color: #1E293B; margin: 0; font-size: 24px;'>({clean_name})的收盤價</h2>
                         <div style='display: flex; align-items: baseline; flex-wrap: wrap;'>
                             <b class='main-price' style='font-size: 75px; color: {active_color}; letter-spacing: -2px;'>{curr_c:.2f}</b>
                             <div style='margin-left: 15px;'>
@@ -397,7 +399,7 @@ elif st.session_state.mode == "forecast":
 
                 # --- [顯示：機器學習個別標定報告 (亮底深字)] ---
                 clean_name = name.split('(')[0].split('-')[0].strip()
-                st.markdown(f"### 🤖 {clean_name} 專屬 AI 機器學習回測")
+                st.markdown(f"### 🤖 {clean_name} 的專屬 AI 機器學習回測")
                 r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
                 r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
 
@@ -543,6 +545,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
