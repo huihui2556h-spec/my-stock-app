@@ -11,6 +11,15 @@ import matplotlib
 
 st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
 
+# --- 1. [定義台股升降單位函數] ---
+def get_tick_size(price):
+    if price < 10: return 0.01
+    elif price < 50: return 0.05
+    elif price < 100: return 0.1
+    elif price < 500: return 0.5
+    elif price < 1000: return 1.0
+    else: return 5.0  # 台積電等級 (1000元以上)
+
 # 2. 定義時區，確保日期隨時間自動改變不報錯 [cite: 2026-01-12]
 tw_tz = pytz.timezone("Asia/Taipei")
 
@@ -205,6 +214,20 @@ elif st.session_state.mode == "realtime":
                     """, unsafe_allow_html=True)
 
 elif st.session_state.mode == "forecast":
+    tick = get_tick_size(curr_c)
+            
+            # 修正波動慣性：確保它是跳動單位的倍數 
+            # 例如台積電就不會再出現 1.73，會修正為 5.0
+    adjusted_inertia = round(atr * bias / tick) * tick 
+            
+            # 預估開盤價也必須符合台股跳動規則 
+            # 考慮族群輪動與量能後，對齊到最近的檔位
+    est_open = round(est_open / tick) * tick
+
+            # --- 3. [修正顯示數值] ---
+            # 確保介面上顯示的是經過修正的波動慣性
+    vol_inertia = adjusted_inertia
+
     if st.sidebar.button("⬅️ 返回首頁"):
         st.session_state.mode = "home"
         st.rerun()
@@ -366,6 +389,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
