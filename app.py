@@ -267,7 +267,8 @@ elif st.session_state.mode == "forecast":
                 # 修正預估開盤：符合台股跳動單位 [cite: 2026-01-12]
                 est_open = round(est_open_raw / tick) * tick
 
-                
+                price_diff = curr_c - prev_close 
+                active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
 
                 # --- [2. 排版優化區：解決手機對比與字體問題] ---
                 st.markdown(f"""
@@ -452,6 +453,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
