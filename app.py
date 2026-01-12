@@ -327,19 +327,8 @@ elif st.session_state.mode == "forecast":
                     # 股票名稱
                     st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
                     # 收盤價區塊：依昨收價動態變色
-                    st.markdown(f"""
-                        <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid {price_color}; margin-top:15px;'>
-                            <p style='color:#444; font-size:24px; margin:0;'>最新收盤報價：</p>
-                            <div style='display: flex; align-items: baseline;'>
-                                <b style='font-size:90px; color:{price_color}; line-height:1;'>{curr_c:.2f}</b>
-                                <span style='font-size:28px; color:{price_color}; margin-left:15px; font-weight:bold;'>
-                                    ({'▲' if curr_c >= prev_close else '▼'} {abs(price_change_pct):.2f}%)
-                                </span>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                with h2:
-                    st.info(f"📊 籌碼修正：{bias:.3f} | 🚩 波動慣性：{vol_inertia:.2f} | 🌅 預估明日開盤：{est_open:.2f}")
+                    
+                
 
                 # --- 4. [命中率與卡片顯示區] ---
                 # 計算 60 日真實回測命中率 [cite: 2026-01-12]
@@ -453,6 +442,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
