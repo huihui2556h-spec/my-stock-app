@@ -214,44 +214,62 @@ elif st.session_state.mode == "realtime":
                     """, unsafe_allow_html=True)
 
 elif st.session_state.mode == "forecast":
-    tick = get_tick_size(curr_c)
-            
-            # 修正波動慣性：確保它是跳動單位的倍數 
-            # 例如台積電就不會再出現 1.73，會修正為 5.0
-    adjusted_inertia = round(atr * bias / tick) * tick 
-            
-            # 預估開盤價也必須符合台股跳動規則 
-            # 考慮族群輪動與量能後，對齊到最近的檔位
-    est_open = round(est_open / tick) * tick
-
-            # --- 3. [修正顯示數值] ---
-            # 確保介面上顯示的是經過修正的波動慣性
-    vol_inertia = adjusted_inertia
-
+    
     if st.sidebar.button("⬅️ 返回首頁"):
         st.session_state.mode = "home"
         st.rerun()
     st.title("📊 隔日當沖與波段預估")
     stock_id = st.text_input("輸入代碼 (例: 2330)")
 
-    if stock_id:
+  if stock_id:
         with st.spinner('AI 多因子計算與回測中...'):
             df, sym = fetch_stock_data(stock_id)
             if not df.empty:
-                # --- 1. [數據計算區] 必須排在顯示之前 ---
+                # --- 1. [數據計算區] ---
                 df = df.ffill()
                 name = get_stock_name(stock_id)
                 curr_c = float(df['Close'].iloc[-1])    # 今日收盤
-                prev_close = float(df['Close'].iloc[-2]) # 昨收價 (用於判定紅綠)
+                prev_close = float(df['Close'].iloc[-2]) # 昨收價
                 
-                # [2026-01-12 指示] 籌碼修正與慣性計算 [cite: 2026-01-12]
-                chip_score = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
-                bias = 1.006 if chip_score > 1 else 0.994 # 法人籌碼補償 [cite: 2026-01-12]
+                # --- 2. [族群動能與相對量能計算] ---
+                # 相對成交量 (Relative Volume) [cite: 2026-01-12]
+                relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
+                
+                # 族群輪動慣性 (以近 5 日累積漲跌幅估計) [cite: 2026-01-12]
+                sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
+                sector_bias = 1 + (sector_momentum * 0.005) # 族群強則慣性增加 [cite: 2026-01-12]
+
+                # --- 3. [籌碼修正與波動計算] ---
+                # 修正 Bias：整合量能與族群動能，不再只是固定的 0.994 [cite: 2026-01-12]
+                bias = 1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)
+                bias = max(0.97, min(1.04, bias)) # 限制範圍避免極端
+
+                # ATR 基礎波動計算 [cite: 2026-01-12]
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
                 atr = tr.rolling(14).mean().iloc[-1]
-                est_open = curr_c + (atr * 0.05 * bias) # 預估開盤價 [cite: 2026-01-12]
-                vol_inertia = (df['Close'].pct_change().std() * 100) # 波動慣性 [cite: 2026-01-12]
+                
+                # --- 4. [量能驅動開盤預估] ---
+                # 不使用固定 0.05，改由相對量能 relative_volume 決定跳空強度 [cite: 2026-01-12]
+                vol_impact = max(0.02, min(0.12, 0.04 * relative_volume * sector_bias))
+                
+                if curr_c >= prev_close:
+                    est_open_raw = curr_c + (atr * vol_impact * bias) # 向上慣性 [cite: 2026-01-12]
+                else:
+                    est_open_raw = curr_c - (atr * vol_impact / bias) # 向下慣性 (考慮過跌) [cite: 2026-01-12]
 
+                # --- 5. [台股 Tick Size 修正] ---
+                # 呼叫頂部的 get_tick_size 函數 [cite: 2026-01-12]
+                tick = get_tick_size(curr_c)
+                
+                # 修正波動慣性：台積電會變成 5.0 的倍數，不再是 1.73 [cite: 2026-01-12]
+                vol_inertia = round((atr * bias) / tick) * tick 
+                
+                # 修正預估開盤：符合台股跳動單位 [cite: 2026-01-12]
+                est_open = round(est_open_raw / tick) * tick
+
+            # --- 3. [修正顯示數值] ---
+            # 確保介面上顯示的是經過修正的波動慣性
+                vol_inertia = adjusted_inertia
                 # --- 2. [動態變色邏輯] ---
                 price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
                 price_change_pct = (curr_c - prev_close) / prev_close * 100
@@ -389,6 +407,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
