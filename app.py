@@ -219,6 +219,14 @@ elif st.session_state.mode == "forecast":
                 acc_dl = calculate_real_accuracy(df, 0.65 / bias, 'low')
                 acc_wh = calculate_real_accuracy(df, 1.9 * bias, 'high')
                 acc_wl = calculate_real_accuracy(df, 1.6 / bias, 'low')
+              
+                # --- 1. 計算漲跌色標邏輯 ---
+                # 獲取昨收價 (最後一筆是今日，倒數第二筆是昨收)
+                prev_close = float(df['Close'].iloc[-2]) 
+                # 判斷顏色：台股習慣紅漲綠跌
+                price_color = "#C53030" if curr_c >= prev_close else "#2F855A" 
+                # 漲跌百分比計算
+                price_change_pct = (curr_c - prev_close) / prev_close * 100
 
                 # --- 2. [頂部核心顯示區] 巨型收盤價與籌碼資訊 ---
                 st.divider()
@@ -275,6 +283,7 @@ elif st.session_state.mode == "forecast":
             else:
                 st.error("❌ 查無資料，請確認代碼。")
             
+
 
 
 
