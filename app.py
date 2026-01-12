@@ -321,15 +321,15 @@ elif st.session_state.mode == "forecast":
                         status_text = "帶量擴張" if bias > 1 else "量縮盤整"
                         status_desc = f"目前籌碼修正係數為 {bias:.3f}，AI 已根據法人籌碼自動調整空間。" [cite: 2026-01-12]
 
-                    st.markdown(f"""
-                    **1. 籌碼流向動態：**
-                    - 今日盤態：**{status_text}**
-                    - 說明：{status_desc}
+                        st.markdown(f"""
+                        **1. 籌碼流向動態：**
+                        - 今日盤態：**{status_text}**
+                        - 說明：{status_desc}
                     
-                    **2. 價格波動慣性 (Inertia)：**
-                    - 14 日 ATR 波動均幅：`{atr:.2f}`
-                    - 預估明日開盤慣性：`{est_open:.2f}` (此數值隨每日數據動態計算) 
-                    """)
+                        **2. 價格波動慣性 (Inertia)：**
+                        - 14 日 ATR 波動均幅：`{atr:.2f}`
+                        - 預估明日開盤慣性：`{est_open:.2f}` (此數值隨每日數據動態計算) 
+                        """)
 
                 with note_col2:
                     # 根據 60 日回測命中率判定評等 
@@ -349,6 +349,7 @@ elif st.session_state.mode == "forecast":
 
                 
                   st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
