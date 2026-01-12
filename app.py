@@ -69,6 +69,32 @@ def get_stock_name(stock_id):
     except:
         return f"台股 {stock_id}"
 
+# --- 頂部核心：獨立大字體收盤價與股票名稱 (恢復原色不亂改) ---
+st.divider()
+h1, h2 = st.columns([3, 2])
+
+with h1:
+    # 股票名稱顏色鎖定黑色，不隨意更改
+    st.markdown(f"<h1 style='color:#000; font-size:60px; margin-bottom:0;'>{name} ({sym})</h1>", unsafe_allow_html=True)
+    
+    # 收盤價獨立欄位：恢復 90px 巨型字體與紅色色塊
+    st.markdown(f"""
+        <div style='background:#f9f9f9; padding:20px; border-radius:12px; border-left:10px solid #C53030; margin-top:15px;'>
+            <p style='color:#444; font-size:26px; margin:0;'>最新收盤報價：</p>
+            <b style='font-size:90px; color:#C53030; line-height:1;'>{curr_c:.2f}</b>
+        </div>
+    """, unsafe_allow_html=True)
+
+with h2:
+    # 整合 2026-01-12 指示：籌碼修正 (bias) 與 開盤預估
+    st.info(f"""
+    📊 籌碼修正：{bias:.3f} ({'法人偏多' if bias > 1 else '法人偏空'})
+    
+    🚩 波動慣性：{(df['Close'].pct_change().std()*100):.2f}
+    
+    🌅 預估明日開盤：{est_open:.2f}
+    """)
+
 # --- 抓股價 ---
 @st.cache_data(ttl=3600)
 def fetch_stock_data(stock_id, period="120d"):
@@ -260,6 +286,7 @@ elif st.session_state.mode == "forecast":
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
 
 
