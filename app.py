@@ -81,20 +81,20 @@ def fetch_stock_data(stock_id, period="120d"):
             return df, symbol
     return pd.DataFrame(), None
 
-# --- 🎨 修正排版：卡片顯示件 (四欄並排用) ---
-def stock_box(label, price, pct, acc, color):
-    bg_color = "#FFF5F5" if color=="red" else "#F5FFF5"
-    text_color = "#C53030" if color=="red" else "#2F855A"
-    arrow = "↑" if color=="red" else "↓"
+# --- 🎨 自定義台股配色組件 ---
+def stock_box(label, price, pct, acc, color_type="red"):
+    bg_color = "#FF4B4B" if color_type == "red" else "#28A745"
+    arrow = "↑" if color_type == "red" else "↓"
     st.markdown(f"""
-    <div style="background:{bg_color}; padding:15px; border-radius:10px; border:1px solid #eee; text-align:center; margin-bottom:10px">
-        <div style="font-size:16px; color:#444; font-weight:bold;">{label}</div>
-        <div style="font-size:32px; color:{text_color}; font-weight:bold; margin:10px 0;">{price:.2f}</div>
-        <span style="background:{text_color}; color:white; padding:3px 12px; border-radius:5px; font-size:14px">{arrow} {pct:.2f}%</span>
-        <div style="font-size:12px; color:#888; margin-top:12px">60日回測命中率：{acc:.1f}%</div>
-    </div>
+        <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {bg_color}; margin-bottom: 10px;">
+            <p style="margin:0; font-size:14px; color:#555;">{label}</p>
+            <h2 style="margin:0; padding:5px 0; color:#333;">{price:.2f}</h2>
+            <span style="background-color:{bg_color}; color:white; padding:2px 8px; border-radius:5px; font-size:14px;">
+                {arrow} {pct:.2f}%
+            </span>
+            <p style="margin-top:10px; font-size:12px; color:#888;">↳ 近20日達成率：{acc:.1f}%</p>
+        </div>
     """, unsafe_allow_html=True)
-
 # ================== 介面控制 ==================
 if st.session_state.mode == "home":
     st.title("⚖️ 台股 AI 交易決策系統")
@@ -260,6 +260,7 @@ elif st.session_state.mode == "forecast":
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
 
 
