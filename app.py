@@ -97,61 +97,65 @@ def stock_box(label, price, pct, acc, color):
 
 # ================== 介面控制 ==================
 elif st.session_state.mode == "realtime":
-    if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
+    if st.sidebar.button("⬅️ 返回首頁"): 
+        st.session_state.mode = "home"
+        st.rerun()
+        
     st.title("⚡ 盤中即時量價（當沖）")
 
+    # 設定台灣時區判斷開盤
     tw_tz = pytz.timezone("Asia/Taipei")
     stock_id = st.text_input("輸入股票代碼（如：2330）")
 
     if stock_id:
-        now = datetime.now(tw_tz)
-        # 判斷台股開盤時段 (09:00 - 13:30)
-        is_market_open = now.weekday() < 5 and (9 <= now.hour < 13 or (now.hour == 13 and now.minute <= 30))
-        
-        # 顯示未開盤警示標語
-        if not is_market_open:
-            st.warning(f"🕒 【未開盤警示】目前非台股交易時段 (現在時間: {now.strftime('%H:%M')})。下方顯示之價格與建議為前一交易日之最終數據。")
-
-        df, sym = fetch_stock_data(stock_id, period="10d") # 抓 10 天確保 ATR 計算穩定
+        # 抓取數據 (確保 period 足夠計算 ATR)
+        df, sym = fetch_stock_data(stock_id, period="120d")
         
         if df.empty:
-            st.error("❌ 查無資料")
+            st.error("❌ 查無資料，請檢查代碼是否正確。")
         else:
+            # 1. 判斷交易時段警示
+            now = datetime.now(tw_tz)
+            is_market_open = now.weekday() < 5 and (9 <= now.hour < 13 or (now.hour == 13 and now.minute <= 30))
+            if not is_market_open:
+                st.warning(f"🕒 【目前未開盤】現在時間 {now.strftime('%H:%M')}。下方建議為基於最後收盤數據之預估。")
+
+            # 2. 數據處理與 FinMind 籌碼邏輯 [2026-01-12 指示]
             df = df.ffill()
             name = get_stock_name(stock_id)
             curr_price = float(df['Close'].iloc[-1])
             
-            # --- 🎯 2026-01-12 指示：加入 FinMind 籌碼補償與波動慣性 ---
-            # 計算成交量 bias (institutional investor chips)
+            # 計算籌碼偏向 (Institutional Investor Chips)
             vol_ma5 = df['Volume'].tail(5).mean()
             curr_vol = df['Volume'].iloc[-1]
-            bias = 1.006 if curr_vol > vol_ma5 * 1.1 else 0.994
+            bias = 1.006 if curr_vol > vol_ma5 else 0.994
             
-            # 計算 ATR
+            # 計算波動慣性 (Volatility Inertia / ATR)
             tr = np.maximum(df['High'] - df['Low'],
                             np.maximum(abs(df['High'] - df['Close'].shift(1)),
                                        abs(df['Low'] - df['Close'].shift(1))))
             atr = tr.rolling(14).mean().iloc[-1]
             
-            # 顯示現價 (保持原始顏色與大字體)
+            # 3. 顯示現價資訊
             st.markdown(f"<h1 style='color:#000;'>{name} <small style='color:gray;'>({sym})</small></h1>", unsafe_allow_html=True)
             st.metric("最新成交價", f"{curr_price:.2f}")
 
             if np.isnan(atr) or atr == 0:
-                st.warning("⚠️ 波動資料不足，暫不提供當沖建議")
+                st.warning("⚠️ 數據計算中，請稍候...")
             else:
-                # 考慮籌碼修正後的建議價格
+                # 4. 當沖 AI 建議價格
                 buy_price = curr_price - (atr * 0.35 / bias)
                 sell_price = curr_price + (atr * 0.55 * bias)
                 expected_return = (sell_price - buy_price) / buy_price * 100
 
                 st.divider()
-                st.subheader("🎯 當沖 AI 建議")
+                st.subheader("🎯 當沖 AI 建議點位")
                 
+                # 判斷風報比是否達標
                 if expected_return < 1.5:
-                    st.warning(f"🚫 預期報酬僅 {expected_return:.2f}% (低於 1.5%)。今日波動不足，不建議進場。")
+                    st.warning(f"🚫 預期報酬率僅 {expected_return:.2f}% (低於 1.5%)，今日波動慣性不足，不建議進場。")
                 else:
-                    # --- 🎨 還原您要求的彩色方塊排版 ---
+                    # 彩色方塊排版
                     d1, d2, d3 = st.columns(3)
                     d1.markdown(f"""
                         <div style="background:#EBF8FF; padding:20px; border-radius:10px; border:1px solid #BEE3F8; text-align:center;">
@@ -173,8 +177,6 @@ elif st.session_state.mode == "realtime":
                             <h2 style="color:#38A169; margin:10px 0;">{expected_return:.2f}%</h2>
                         </div>
                     """, unsafe_allow_html=True)
-                    
-                    st.caption("📘 說明：本建議結合 ATR 波動與 FinMind 籌碼補償係數推估。")
 
 elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
@@ -244,4 +246,5 @@ elif st.session_state.mode == "forecast":
                 st.pyplot(fig)
                 st.info("💡 圖表說明：藍色粗線為收盤價。紅/綠虛線代表 AI 預測之五日空間上限與下限。")
             
+
 
