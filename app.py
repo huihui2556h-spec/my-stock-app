@@ -292,30 +292,49 @@ elif st.session_state.mode == "forecast":
                 
                 plt.tight_layout()
                 st.pyplot(fig)
+                
 
                 # --- 🎯 補充說明註解 (根據您的指示強化) ---
-                st.info(f"💡 **AI 預估模型深度解析：**")
-                
-                # 使用 columns 讓註解排版更專業
-                note1, note2 = st.columns(2)
-                with note1:
-                    st.markdown(f"""
-                    **1. 籌碼修正因子 (Bias)：** 根據最新成交量對比 5 日均量計算出為 `{bias:.3f}`。  
-                    ↳ {'🟢 法人籌碼帶量進場，預估慣性向上調升。' if bias > 1 else '🔴 成交量萎縮或偏空，預估空間向下修正。'} [cite: 2026-01-12]
-                    
-                    **2. 波動慣性 (Volatility)：** 當前 14 日 ATR 波動率為 `{atr:.2f}`。  
-                    ↳ 預估明日開盤價為 `{est_open:.2f}`，此數值已考慮籌碼修正與波動慣性。 [cite: 2026-01-12]
-                    """)
+                # 取得執行當下的時間
+current_date = datetime.now(tw_tz).strftime('%Y-%m-%d')
 
-                with note2:
-                    st.markdown(f"""
-                    **3. 60 日回測命中率：** 上方卡片顯示之 `%` 為過去 60 個交易日，價格是否成功維持在 AI 預估區間內的真實命中率。 [cite: 2026-01-12]
-                    
-                    **4. 操作建議：** - 當命中率 > 85% 時，支撐與壓力位具備極高參考價值。
-                    - 若波動慣性驟升，應注意區間突破之風險。
-                    """)
+st.info(f"📋 **AI 數據自動化偵測報告 ({current_date})**")
+
+# 建立兩欄式動態註解
+note1, note2 = st.columns(2)
+
+with note1:
+    # 根據 bias 變數自動生成「籌碼評論」
+    chip_status = "帶量擴張" if bias > 1 else "量縮盤整"
+    chip_advice = "AI 已自動調高壓力位預期" if bias > 1 else "AI 已自動收斂預估空間"
+    
+    st.markdown(f"""
+    **1. 籌碼流向動態：** - 今日成交量對比均量呈現 **{chip_status}**。
+    - 籌碼修正係數為 `{bias:.3f}`，{chip_advice}。
+    
+    **2. 價格波動慣性：** - 根據最新 ATR 波動率 `{atr:.2f}` 計算。
+    - 預估明日開盤在 `{est_open:.2f}` 附近。若開盤高於此價，代表多方強勢。
+    """)
+
+with note2:
+    # 根據命中率(acc_dh)自動生成「信心評論」
+    # 這裡使用您之前算好的 acc_dh 作為信心指標
+    confidence_level = "核心參考" if acc_dh > 85 else "謹慎參考"
+    
+    st.markdown(f"""
+    **3. 60日歷史回測精度：** - 本次 AI 預估區間在過去 60 個交易日中，維持了 **{acc_dh:.1f}%** 的命中率。
+    - 評等為：`{confidence_level}`。 (命中率越高，代表該股越符合波動慣性)
+    
+    **4. 隔日空間參考：**
+    - 預計明日波動範圍約在 `{curr_c - atr*0.65/bias:.2f}` 至 `{curr_c + atr*0.85*bias:.2f}` 之間。
+    """)
+
+# 最後放一個會隨股名變動的提醒
+st.caption(f"※ 以上數據係基於 {name}({stock_id}) 截至 {current_date} 之最後交易數據計算得出。")
+
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
