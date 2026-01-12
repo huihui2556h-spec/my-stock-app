@@ -296,59 +296,63 @@ elif st.session_state.mode == "forecast":
 
                 # --- 🎯 補充說明註解 (根據您的指示強化) ---
                 # 取得執行當下的時間
+                # --- 🎯 AI 數據自動化偵測報告 (內容隨每日數據與日期變動) ---
+                
+                # 1. 定義時區與即時日期
                 tw_tz = pytz.timezone("Asia/Taipei") 
                 current_time = datetime.now(tw_tz)
-                current_date = current_time.strftime('%Y-%m-%d')  # 確保與最後一行變數名一致
+                current_date = current_time.strftime('%Y-%m-%d')
                 current_hm = current_time.strftime('%H:%M')
 
-                # 2. 判斷今日盤態：整合極端漲跌與法人籌碼因子 [cite: 2026-01-12]
+                # 2. 判斷今日盤態：考慮漲停、過度下跌與籌碼修正
                 daily_change_pct = (curr_c - prev_close) / prev_close * 100
 
                 st.info(f"📋 **AI 數據自動化偵測報告 (分析基準日：{current_date} {current_hm})**")
 
-                # 3. 定義顯示欄位
+                # 3. 建立顯示欄位
                 note_col1, note_col2 = st.columns(2)
 
                 with note_col1:
-                    # 動態生成「籌碼流向」與「盤態判斷」 [cite: 2026-01-12]
+                    # 根據漲跌幅與籌碼修正量 (bias) 自動生成動態文字
                     if daily_change_pct > 7 and bias > 1.05:
                         status_text = "🔥 強勢攻擊盤 (多頭噴發)"
-                        status_desc = "今日漲幅極大且帶量。此時慣性已衝破 ATR 常態區間，壓力位僅供參考。"
+                        status_desc = "今日漲幅極大且帶量，慣性已突破 ATR 常態區間。壓力位僅供參考，應注意乖離率。"
                     elif daily_change_pct < -7 and bias > 1.05:
                         status_text = "❄️ 恐慌下跌盤 (放量殺低)"
                         status_desc = "偵測到過度下跌因素，下跌慣性強烈。支撐位可能失守，請謹慎接刀。"
                     else:
                         status_text = "帶量擴張" if bias > 1 else "量縮盤整"
-                        status_desc = f"目前籌碼修正係數為 {bias:.3f}，AI 已根據法人籌碼自動調整空間。" [cite: 2026-01-12]
+                        status_desc = f"目前籌碼修正係數為 {bias:.3f}，AI 已根據法人籌碼慣性自動調整空間。"
 
-                        st.markdown(f"""
-                        **1. 籌碼流向動態：**
-                        - 今日盤態：**{status_text}**
-                        - 說明：{status_desc}
+                    st.markdown(f"""
+                    **1. 籌碼流向動態：**
+                    - 今日盤態：**{status_text}**
+                    - 說明：{status_desc}
                     
-                        **2. 價格波動慣性 (Inertia)：**
-                        - 14 日 ATR 波動均幅：`{atr:.2f}`
-                        - 預估明日開盤慣性：`{est_open:.2f}` (此數值隨每日數據動態計算) 
-                        """)
+                    **2. 價格波動慣性 (Inertia)：**
+                    - 14 日 ATR 波動均幅：`{atr:.2f}`
+                    - 預估明日開盤慣性：`{est_open:.2f}` (隨每日數據動態計算)
+                    """)
 
                 with note_col2:
-                    # 根據 60 日回測命中率判定評等 
+                    # 根據 60 日回測命中率判定評等
                     confidence_tag = "核心參考" if acc_dh > 85 else "謹慎參考 (波動異常)"
                     
                     st.markdown(f"""
                     **3. 60 日歷史回測精度：**
-                    - 考慮「波動慣性」與「法人籌碼」後之真實命中率。 [cite: 2026-01-12]
-                    - 過去 60 交易日維持了 **{acc_dh:.1f}%**，評等為：`{confidence_tag}`。 
+                    - 考慮「波動慣性」與「法人籌碼」後之真實命中率。
+                    - 過去 60 交易日維持了 **{acc_dh:.1f}%**，評等為：`{confidence_tag}`。
                     
                     **4. 空間參考範疇：**
-                    - 預計明日波動區間：`{curr_c - atr*0.65/bias:.2f}` 至 `{curr_c + atr*0.85*bias:.2f}`。 
+                    - 預計明日波動範圍約在 `{curr_c - atr*0.65/bias:.2f}` 至 `{curr_c + atr*0.85*bias:.2f}` 之間。
                     """)
 
-                # 4. 底部聲明 (使用與上方定義相同的 current_date)
-                st.caption(f"※ 本分析由 AI 於 {current_date} 根據 {name}({stock_id}) 之最新量價與法人籌碼數據自動生成。") 
+                # 4. 底部自動日期聲明
+                st.caption(f"※ 本分析由 AI 於 {current_date} 根據 {name}({stock_id}) 最新數據自動生成。")
 
                 
                   st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
