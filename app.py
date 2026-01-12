@@ -163,28 +163,7 @@ elif st.session_state.mode == "realtime":
             price_diff = curr_price - prev_close
             active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
 
-            # --- [2. 亮底深字：最新報價卡片 (不論開盤與否都顯示基礎資訊)] ---
-            st.markdown(f"""
-                <style>
-                    @media (max-width: 600px) {{ .main-price {{ font-size: 52px !important; }} }}
-                </style>
-                <div style='background: #FFFFFF; padding: 25px; border-radius: 18px; border-left: 12px solid {active_color}; border: 1px solid #E2E8F0; box-shadow: 0 4px 12px rgba(0,0,0,0.05);'>
-                    <div style='color: #0F172A; font-size: 28px; font-weight: 800;'>{name} ({sym})</div>
-                    <div style='display: flex; align-items: baseline; flex-wrap: wrap; margin-top:10px;'>
-                        <b class='main-price' style='font-size: 70px; color: {active_color}; line-height: 1;'>{curr_price:.2f}</b>
-                        <div style='margin-left: 15px;'>
-                            <span style='font-size: 28px; color: {active_color}; font-weight: 900; display: block;'>
-                                {'▲' if price_diff >= 0 else '▼'} {abs(price_diff):.2f}
-                            </span>
-                            <span style='font-size: 18px; color: {active_color}; font-weight: 700;'>
-                                ({(price_diff/prev_close*100):.2f}%)
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-            st.divider()
+           
 
             # --- [3. 關鍵邏輯：未開盤僅顯示警示，盤中才計算動態預測] ---
             if not is_market_open:
@@ -194,24 +173,50 @@ elif st.session_state.mode == "realtime":
             else:
                 # 盤中時間：顯示動態預測 [cite: 2026-01-12]
                 st.success(f"🟢 【盤中 AI 動態監控中】數據隨量價即時校正")
+
+                st.markdown(f"""
+                    <style>
+                        @media (max-width: 600px) {{ .main-price {{ font-size: 52px !important; }} }}
+                    </style>
+                    <div style='background: #FFFFFF; padding: 25px; border-radius: 18px; border-left: 12px solid {active_color}; border: 1px solid #E2E8F0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px;'>
+                        <div style='color: #0F172A; font-size: 28px; font-weight: 800;'>{name} ({sym})</div>
+                        <div style='display: flex; align-items: baseline; flex-wrap: wrap; margin-top:10px;'>
+                            <b class='main-price' style='font-size: 70px; color: {active_color}; line-height: 1;'>{curr_price:.2f}</b>
+                            <div style='margin-left: 15px;'>
+                                <span style='font-size: 28px; color: {active_color}; font-weight: 900; display: block;'>
+                                    {'▲' if price_diff >= 0 else '▼'} {abs(price_diff):.2f}
+                                </span>
+                                <span style='font-size: 18px; color: {active_color}; font-weight: 700;'>
+                                    ({(price_diff/prev_close*100):.2f}%)
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
                 
-                # --- [動態數據演算：捨棄死板公式] ---
-                # 使用最近 20 分鐘的波動標準差，反映市場情緒
-                recent_std = df['Close'].tail(20).std()
-                # 即時量能係數：反應籌碼推動力道 [cite: 2026-01-12]
-                curr_vol = df['Volume'].iloc[-1]
-                vol_ma5 = df['Volume'].tail(5).mean()
-                instant_vol_factor = curr_vol / vol_ma5
+                # 1. 動態信心係數 (Confidence Factor)
+                # 觀察最近 5 分鐘的價格是否穩定，若震盪劇烈則擴大安全邊際
+                stability_index = df['Close'].tail(5).std() / recent_std
+                confidence_shield = max(1.0, min(2.0, stability_index))
+
+                # 2. 動態量價擴展 (Dynamic Expansion)
+                # 買點不再是固定減去多少，而是根據「能量守恆」：
+                # 當成交量暴增時，波動空間會呈非線性擴張 (例如開平方根)
+                vol_expansion = np.sqrt(instant_vol_factor) 
                 
-                # 動態買賣點演算
-                # 買點隨量能增加而下退(防殺盤)，賣點隨量能增加而上推(看突破)
-                dynamic_buy = curr_price - (recent_std * (1.2 / instant_vol_factor))
-                dynamic_sell = curr_price + (recent_std * (1.5 * instant_vol_factor))
+                # 3. 終極演算：點位由「即時波動率」與「能量擴展」交互計算
+                # 這裡沒有 1.2 或 1.5，而是由 stability_index 與 vol_expansion 決定
+                dynamic_offset_low = recent_std * (confidence_shield / vol_expansion)
+                dynamic_offset_high = recent_std * (vol_expansion * confidence_shield)
                 
-                # 對齊台股 Tick Size [cite: 2026-01-12]
+                # 4. 生成動態買賣點
+                buy_support = curr_price - dynamic_offset_low
+                sell_resist = curr_price + dynamic_offset_high
+
+                # --- [對齊 Tick Size] ---
                 tick = get_tick_size(curr_price)
-                buy_point = round(dynamic_buy / tick) * tick
-                sell_target = round(dynamic_sell / tick) * tick
+                buy_point = round(buy_support / tick) * tick
+                sell_target = round(sell_resist / tick) * tick
                 expected_return = (sell_target - buy_point) / buy_point * 100
 
                 # --- [顯示當沖 AI 建議點位] ---
@@ -466,6 +471,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
