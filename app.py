@@ -123,6 +123,7 @@ def stock_box(label, price, pct, acc, color_type="red"):
     """, unsafe_allow_html=True)
 
 # 建立英文 ID 與中文名稱的對照字典
+for en_id, tickers in INDUSTRY_CHAINS_EN.items():
     sector_legend = {
         "PCB-CCL": "PCB-材料 (CCL/銅箔)",
         "PCB-Substrate": "PCB-載板 (ABF/BT)",
@@ -207,7 +208,6 @@ if st.session_state.mode == "sector":
    
     with st.spinner('正在掃描全台股細分產業資金流向...'):
         flow_report = []
-        for en_id, tickers in INDUSTRY_CHAINS_EN.items():
             try:
                 data = yf.download(tickers, period="10d", progress=False)
                 if not data.empty:
@@ -686,6 +686,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
