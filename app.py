@@ -123,7 +123,7 @@ def stock_box(label, price, pct, acc, color_type="red"):
     """, unsafe_allow_html=True)
 
 # 建立英文 ID 與中文名稱的對照字典
-for en_id, tickers in INDUSTRY_CHAINS_EN.items():
+
     sector_legend = {
         "PCB-CCL": "PCB-材料 (CCL/銅箔)",
         "PCB-Substrate": "PCB-載板 (ABF/BT)",
@@ -206,8 +206,11 @@ if st.session_state.mode == "sector":
     st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
     
    
-    with st.spinner('正在掃描全台股細分產業資金流向...'):
+    
+    with st.spinner('正在掃描全台股細分產業資金流向'):
         flow_report = []
+       
+        for en_id, tickers in INDUSTRY_CHAINS_EN.items():
             try:
                 data = yf.download(tickers, period="10d", progress=False)
                 if not data.empty:
@@ -216,7 +219,8 @@ if st.session_state.mode == "sector":
                     # 2. 資金流入比 (今日成交量 / 5日均量)
                     vol_ratio = data['Volume'].iloc[-1].sum() / data['Volume'].tail(5).mean().sum()
                     flow_report.append({"ID": en_id, "漲跌%": ret, "資金流入": vol_ratio})
-            except: continue
+            except: 
+                continue
         
         df_flow = pd.DataFrame(flow_report)
 
@@ -686,6 +690,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
