@@ -262,7 +262,8 @@ if st.session_state.mode == "sector":
                         try:
                             # 獲取個股名稱與今日表現
                             t_data = yf.Ticker(ticker)
-                            t_name = get_stock_name(ticker.split('.')[0])
+                            raw_name = get_stock_name(ticker.split('.')[0])
+                            t_name = raw_name.replace("走勢圖", "").replace("Yahoo奇摩股市", "").strip()
                             t_price = t_data.history(period="2d")
                             if len(t_price) >= 2:
                                 t_ret = (t_price['Close'].iloc[-1] / t_price['Close'].iloc[-2] - 1) * 100
@@ -724,6 +725,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
