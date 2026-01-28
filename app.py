@@ -118,24 +118,6 @@ def stock_box(label, price, pct, acc, color_type="red"):
             <p style="margin-top:10px; font-size:12px; color:#888;">↳ 近20日達成率：{acc:.1f}%</p>
         </div>
     """, unsafe_allow_html=True)
-沒問題！要做到最精準的資金輪動監測，我們必須把台股的「核心神經系統」全部拆解開來。
-
-除了您原本要求的 PCB 上中下游 與 記憶體細分，我再補齊了 AI 伺服器鏈（機殼、散熱、代工）、半導體設備（CoWoS、矽光子）、光學與手機組件、以及重電與能源政策股。
-
-這份程式碼已經將台股目前最活躍的 12 個細分產業鏈 全部數位化，並配上動態量能監測與地毯式中文註解。
-
-🚀 全產業鏈深度監控版：含 12 組細分分類與 AI 輪動預判
-Python
-import streamlit as st
-import pandas as pd
-import yfinance as yf
-import numpy as np
-import requests
-import re
-from datetime import datetime, time
-import pytz
-import matplotlib.pyplot as plt
-import matplotlib
 
 # =========================================================
 # 1. 終極細分產業鏈地圖 (補全 PCB、記憶體、AI 鏈、重電)
@@ -667,6 +649,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
