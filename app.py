@@ -232,6 +232,36 @@ if st.session_state.mode == "sector":
                 st.warning("⚠️ 目前多數類股處於縮量或盤整期，暫無「爆量起漲」標的，建議保留資金分批布局。")
 
             st.divider()
+            if not df_flow.empty:
+            # ==========================================
+            # 1. [建議買進邏輯放在這裡] - AI 判斷區
+            # ==========================================
+            low_base_candidates = df_flow[
+                (df_flow['資金流入'] > 1.05) & 
+                (df_flow['資金流入'] < 1.8) & 
+                (df_flow['漲跌%'] >= -1.0) & 
+                (df_flow['漲跌%'] <= 2.5)
+            ]
+            
+            st.subheader("🎯 AI 低基期潛力產業建議")
+            if not low_base_candidates.empty:
+                best_bet = low_base_candidates.sort_values(by="資金流入", ascending=False).iloc[0]
+                best_id = best_bet['ID']
+                st.success(f"🚀 **【潛力補漲關注】：{name_map[best_id]}**")
+                st.info(f"💡 理由：資金溫和流入 {best_bet['資金流入']:.2f} 倍，且漲幅僅 {best_bet['漲跌%']:.2f}%，基期低且未過熱。")
+            else:
+                st.warning("⚠️ 目前強金流產業多已處於高位，建議觀望。")
+
+            st.divider()
+            # --- 📋 詳細數據表格 (隱藏左邊數字) ---
+            st.write("📋 **詳細數據明細**")
+            df_display = df_flow.copy()
+            df_display['產業名稱'] = df_display['ID'].map(name_map)
+            st.dataframe(
+                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
+                use_container_width=True,
+                hide_index=True
+            )
 
             # --- 📊 繪製圖表 (英文標籤) ---
             st.write("📈 **Sector Money Flow (資金流入排行榜)**")
@@ -239,6 +269,10 @@ if st.session_state.mode == "sector":
             df_plot = df_flow.sort_values(by="資金流入")
             ax.barh(df_plot['ID'], df_plot['資金流入'], color='gold', edgecolor='black')
             ax.axvline(x=1.0, color='red', ls='--', alpha=0.6)
+            st.pyplot(fig)
+            st.write("📈 **Sector Money Flow (資金流入排行榜)**")
+            fig, ax = plt.subplots(figsize=(10, 6))
+            # ... (繪圖代碼) ...
             st.pyplot(fig)
 
             # --- 📝 中文註解 ---
@@ -251,15 +285,7 @@ if st.session_state.mode == "sector":
             
             st.divider()
 
-            # --- 📋 詳細數據表格 (隱藏左邊數字) ---
-            st.write("📋 **詳細數據明細**")
-            df_display = df_flow.copy()
-            df_display['產業名稱'] = df_display['ID'].map(name_map)
-            st.dataframe(
-                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
-                use_container_width=True,
-                hide_index=True
-            )
+            
             
         else:
             st.error("暫時無法取得數據，請確認網路或 API 連線。")
@@ -682,6 +708,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
