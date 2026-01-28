@@ -169,7 +169,7 @@ if st.session_state.mode == "sector":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("💎 產業鏈深度資金監控")
     st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
-    sector_legend = {
+    name_map = {
         "PCB-CCL": "PCB-材料 (CCL/銅箔)",
         "PCB-Substrate": "PCB-載板 (ABF/BT)",
         "PCB-Assembly": "PCB-組裝加工 (硬板/HDI)",
@@ -687,6 +687,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
