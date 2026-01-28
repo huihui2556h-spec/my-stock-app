@@ -236,11 +236,11 @@ if st.session_state.mode == "sector":
             # ==========================================
             # 1. [建議買進邏輯放在這裡] - AI 判斷區
             # ==========================================
-            low_base_candidates = df_flow[
-                (df_flow['資金流入'] > 1.05) & 
-                (df_flow['資金流入'] < 1.8) & 
-                (df_flow['漲跌%'] >= -1.0) & 
-                (df_flow['漲跌%'] <= 2.5)
+               low_base_candidates = df_flow[
+                 (df_flow['資金流入'] > 1.05) & 
+                 (df_flow['資金流入'] < 1.8) & 
+                 (df_flow['漲跌%'] >= -1.0) & 
+                 (df_flow['漲跌%'] <= 2.5)
             ]
             
             st.subheader("🎯 AI 低基期潛力產業建議")
@@ -708,6 +708,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
