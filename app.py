@@ -8,6 +8,9 @@ from datetime import datetime, time
 import pytz
 import matplotlib.pyplot as plt
 import matplotlib
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score, mean_absolute_error
 
 st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
 
@@ -119,6 +122,39 @@ def stock_box(label, price, pct, acc, color_type="red"):
         </div>
     """, unsafe_allow_html=True)
 
+# 建立英文 ID 與中文名稱的對照字典
+    sector_legend = {
+        "PCB-CCL": "PCB-材料 (CCL/銅箔)",
+        "PCB-Substrate": "PCB-載板 (ABF/BT)",
+        "PCB-Assembly": "PCB-組裝加工 (硬板/HDI)",
+        "Memory-Fab": "記憶體-原廠/代工",
+        "Memory-Module": "記憶體-模組廠",
+        "Memory-Controller": "記憶體-控制 IC",
+        "Semi-Equip": "半導體-設備/CoWoS",
+        "CPO-Silicon": "矽光子 (CPO/光通訊)",
+        "AI-Case": "AI 伺服器 (機殼/滑軌)",
+        "AI-Cooling": "AI 伺服器 (散熱/水冷)",
+        "AI-ODM": "AI 伺服器 (ODM 代工)",
+        "Power-Grid": "重電/電力 (政策股)",
+        "Shipping": "航運 (貨櫃/散裝)"
+    }
+
+    # 產業鏈英文 ID 定義 (避免圖表亂碼)
+    CHAINS_EN = {
+        "PCB-CCL": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO"],
+        "PCB-Substrate": ["8046.TW", "3037.TW", "3189.TW"],
+        "PCB-Assembly": ["2367.TW", "2313.TW", "2368.TW", "4958.TW"],
+        "Memory-Fab": ["2344.TW", "2337.TW", "2408.TW"],
+        "Memory-Module": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO"],
+        "Memory-Controller": ["8299.TW", "4966.TW", "6233.TWO"],
+        "Semi-Equip": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO"],
+        "CPO-Silicon": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW"],
+        "AI-Case": ["8210.TW", "2059.TW", "6803.TW", "3693.TW"],
+        "AI-Cooling": ["3017.TW", "3324.TW", "2421.TW", "6230.TW"],
+        "AI-ODM": ["2382.TW", "2317.TW", "3231.TW", "6669.TW"],
+        "Power-Grid": ["1513.TW", "1503.TW", "1519.TW", "1514.TW"],
+        "Shipping": ["2603.TW", "2609.TW", "2615.TW", "2606.TW"]
+    }
 
 # =========================================================
 # 2. 核心運算：全自動資金流向分析
@@ -167,40 +203,7 @@ if st.session_state.mode == "sector":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("💎 產業鏈深度資金監控")
     st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
-    # 建立英文 ID 與中文名稱的對照字典
-    sector_legend = {
-        "PCB-CCL": "PCB-材料 (CCL/銅箔)",
-        "PCB-Substrate": "PCB-載板 (ABF/BT)",
-        "PCB-Assembly": "PCB-組裝加工 (硬板/HDI)",
-        "Memory-Fab": "記憶體-原廠/代工",
-        "Memory-Module": "記憶體-模組廠",
-        "Memory-Controller": "記憶體-控制 IC",
-        "Semi-Equip": "半導體-設備/CoWoS",
-        "CPO-Silicon": "矽光子 (CPO/光通訊)",
-        "AI-Case": "AI 伺服器 (機殼/滑軌)",
-        "AI-Cooling": "AI 伺服器 (散熱/水冷)",
-        "AI-ODM": "AI 伺服器 (ODM 代工)",
-        "Power-Grid": "重電/電力 (政策股)",
-        "Shipping": "航運 (貨櫃/散裝)"
-    }
-
-    # 產業鏈英文 ID 定義 (避免圖表亂碼)
-    CHAINS_EN = {
-        "PCB-CCL": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO"],
-        "PCB-Substrate": ["8046.TW", "3037.TW", "3189.TW"],
-        "PCB-Assembly": ["2367.TW", "2313.TW", "2368.TW", "4958.TW"],
-        "Memory-Fab": ["2344.TW", "2337.TW", "2408.TW"],
-        "Memory-Module": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO"],
-        "Memory-Controller": ["8299.TW", "4966.TW", "6233.TWO"],
-        "Semi-Equip": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO"],
-        "CPO-Silicon": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW"],
-        "AI-Case": ["8210.TW", "2059.TW", "6803.TW", "3693.TW"],
-        "AI-Cooling": ["3017.TW", "3324.TW", "2421.TW", "6230.TW"],
-        "AI-ODM": ["2382.TW", "2317.TW", "3231.TW", "6669.TW"],
-        "Power-Grid": ["1513.TW", "1503.TW", "1519.TW", "1514.TW"],
-        "Shipping": ["2603.TW", "2609.TW", "2615.TW", "2606.TW"]
-    }
-
+    
    
     with st.spinner('正在掃描全台股細分產業資金流向...'):
         flow_report = []
@@ -683,6 +686,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
