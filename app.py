@@ -235,6 +235,16 @@ if st.session_state.mode == "sector":
                 st.warning("⚠️ 市場目前資金較為分散，尚未出現明顯的「爆量起漲」黑馬區段。")
 
             st.divider()
+            # --- 📋 詳細數據明細 (隱藏最左邊數字) ---
+            st.write("📋 **詳細數據明細**")
+            df_display = df_flow.copy()
+            df_display['產業名稱'] = df_display['ID'].map(name_map)
+            # 關鍵：hide_index=True 移除最左側 0, 1, 2... 的無意義序號
+            st.dataframe(
+                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
+                use_container_width=True,
+                hide_index=True
+            )
 
             # --- 📊 英文圖表顯示 (防亂碼) ---
             st.write("📈 **Sector Money Flow (資金流入強度分析)**")
@@ -256,16 +266,7 @@ if st.session_state.mode == "sector":
             
             st.divider()
 
-            # --- 📋 詳細數據明細 (隱藏最左邊數字) ---
-            st.write("📋 **詳細數據明細**")
-            df_display = df_flow.copy()
-            df_display['產業名稱'] = df_display['ID'].map(name_map)
-            # 關鍵：hide_index=True 移除最左側 0, 1, 2... 的無意義序號
-            st.dataframe(
-                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
-                use_container_width=True,
-                hide_index=True
-            )
+            
         else:
             st.error("暫時無法取得數據，請確認網路或 API 連線。")
 
@@ -687,6 +688,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
