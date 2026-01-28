@@ -141,7 +141,7 @@ def stock_box(label, price, pct, acc, color_type="red"):
     }
 
     # 產業鏈英文 ID 定義 (避免圖表亂碼)
-    CHAINS_EN = {
+    INDUSTRY_CHAINS_EN = {
         "PCB-CCL": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO"],
         "PCB-Substrate": ["8046.TW", "3037.TW", "3189.TW"],
         "PCB-Assembly": ["2367.TW", "2313.TW", "2368.TW", "4958.TW"],
@@ -690,6 +690,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
