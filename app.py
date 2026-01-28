@@ -222,7 +222,7 @@ if st.session_state.mode == "sector":
             # 策略：資金爆量 (流入>1.2) 且 今日有撐 (漲幅>-0.5)
             buy_candidates = df_flow[(df_flow['資金流入'] > 1.2) & (df_flow['漲跌%'] > -0.5)]
             
-            st.subheader("🎯 AI 買進決策建議")
+            st.subheader("🎯 目前強勢族群")
             if not buy_candidates.empty:
                 # 排序出最推薦的類股
                 best_sector_id = buy_candidates.sort_values(by="資金流入", ascending=False).iloc[0]['ID']
@@ -270,10 +270,7 @@ if st.session_state.mode == "sector":
             ax.barh(df_plot['ID'], df_plot['資金流入'], color='gold', edgecolor='black')
             ax.axvline(x=1.0, color='red', ls='--', alpha=0.6)
             st.pyplot(fig)
-            st.write("📈 **Sector Money Flow (資金流入排行榜)**")
-            fig, ax = plt.subplots(figsize=(10, 6))
-            # ... (繪圖代碼) ...
-            st.pyplot(fig)
+            
 
             # --- 📝 中文註解 ---
             st.markdown("#### 📘 分類註解 (Legends):")
@@ -708,6 +705,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
