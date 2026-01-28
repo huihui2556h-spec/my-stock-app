@@ -119,32 +119,6 @@ def stock_box(label, price, pct, acc, color_type="red"):
         </div>
     """, unsafe_allow_html=True)
 
-# =========================================================
-# 1. 終極細分產業鏈地圖 (補全 PCB、記憶體、AI 鏈、重電)
-# =========================================================
-INDUSTRY_CHAINS = {
-    # --- PCB 產業鏈深度細分 ---
-    "PCB-材料 (CCL/銅箔)": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO", "3645.TW"],
-    "PCB-載板 (ABF/BT)": ["8046.TW", "3037.TW", "3189.TW"],
-    "PCB-組裝與加工 (硬板/HDI)": ["2367.TW", "2313.TW", "2368.TW", "4958.TW", "6108.TW"],
-    
-    # --- 記憶體產業鏈細分 ---
-    "記憶體-原廠/代工": ["2344.TW", "2337.TW", "2408.TW"],
-    "記憶體-模組廠": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO", "4967.TW"],
-    "記憶體-控制 IC": ["8299.TW", "4966.TW", "6233.TWO"],
-
-    # --- AI 與半導體核心鏈 ---
-    "半導體-設備/CoWoS": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO", "6640.TWO"],
-    "矽光子 (CPO/光通訊)": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW", "3450.TW"],
-    "AI 伺服器 (機殼/滑軌)": ["8210.TW", "2059.TW", "6803.TW", "3693.TW"],
-    "AI 伺服器 (散熱/水冷)": ["3017.TW", "3324.TW", "2421.TW", "6230.TW", "3338.TW"],
-    "AI 伺服器 (ODM 代工)": ["2382.TW", "2317.TW", "3231.TW", "6669.TW", "2356.TW"],
-
-    # --- 其他關鍵產業 ---
-    "重電/電力 (電網升級)": ["1513.TW", "1503.TW", "1519.TW", "1514.TW", "1504.TW"],
-    "光學鏡頭 (手機/車用)": ["3008.TW", "3406.TW", "3504.TW", "3362.TWO"],
-    "航運 (貨櫃/散裝)": ["2603.TW", "2609.TW", "2615.TW", "2606.TW"]
-}
 
 # =========================================================
 # 2. 核心運算：全自動資金流向分析
@@ -193,56 +167,152 @@ if st.session_state.mode == "sector":
     if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
     st.title("💎 產業鏈深度資金監控")
     st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
+    # 建立英文 ID 與中文名稱的對照字典
+    sector_legend = {
+        "PCB-CCL": "PCB-材料 (CCL/銅箔)",
+        "PCB-Substrate": "PCB-載板 (ABF/BT)",
+        "PCB-Assembly": "PCB-組裝加工 (硬板/HDI)",
+        "Memory-Fab": "記憶體-原廠/代工",
+        "Memory-Module": "記憶體-模組廠",
+        "Memory-Controller": "記憶體-控制 IC",
+        "Semi-Equip": "半導體-設備/CoWoS",
+        "CPO-Silicon": "矽光子 (CPO/光通訊)",
+        "AI-Case": "AI 伺服器 (機殼/滑軌)",
+        "AI-Cooling": "AI 伺服器 (散熱/水冷)",
+        "AI-ODM": "AI 伺服器 (ODM 代工)",
+        "Power-Grid": "重電/電力 (政策股)",
+        "Shipping": "航運 (貨櫃/散裝)"
+    }
+
+    # 產業鏈英文 ID 定義 (避免圖表亂碼)
+    CHAINS_EN = {
+        "PCB-CCL": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO"],
+        "PCB-Substrate": ["8046.TW", "3037.TW", "3189.TW"],
+        "PCB-Assembly": ["2367.TW", "2313.TW", "2368.TW", "4958.TW"],
+        "Memory-Fab": ["2344.TW", "2337.TW", "2408.TW"],
+        "Memory-Module": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO"],
+        "Memory-Controller": ["8299.TW", "4966.TW", "6233.TWO"],
+        "Semi-Equip": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO"],
+        "CPO-Silicon": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW"],
+        "AI-Case": ["8210.TW", "2059.TW", "6803.TW", "3693.TW"],
+        "AI-Cooling": ["3017.TW", "3324.TW", "2421.TW", "6230.TW"],
+        "AI-ODM": ["2382.TW", "2317.TW", "3231.TW", "6669.TW"],
+        "Power-Grid": ["1513.TW", "1503.TW", "1519.TW", "1514.TW"],
+        "Shipping": ["2603.TW", "2609.TW", "2615.TW", "2606.TW"]
+    }
+
+   
     
-    with st.spinner('掃描全台股資金流向中...'):
-        df_flow = analyze_full_flow()
+    沒問題，我已經將這段 「市場資金分散」 的警告邏輯與 「隱藏最左側數字」、「英文圖表」、「雙列中文註解」 全部整合在一起。
+
+這份程式碼現在更符合實戰需求，只有在真正偵測到 「量能噴發且股價尚未噴出」 的標的時才會發出勝率較高的預判，其餘時間則維持警示。
+
+🛠️ 產業鏈分析頁面：最終精準版
+請將您 elif st.session_state.mode == "sector": 的區塊完整替換如下：
+
+Python
+# --- B. 💎 類群輪動預警頁面 (精準預判 + 隱藏序號) ---
+elif st.session_state.mode == "sector":
+    if st.sidebar.button("⬅️ 返回首頁"):
+        navigate_to("home")
+    st.title("💎 產業鏈深度資金監控")
+    
+    # 建立中英文對照映射表 (確保圖表不亂碼)
+    name_map = {
+        "PCB-Material": "PCB-上游材料 (CCL/銅箔)",
+        "PCB-Substrate": "PCB-載板 (ABF/BT)",
+        "PCB-HDI": "PCB-組裝加工 (硬板/HDI)",
+        "Memory-Fab": "記憶體-原廠/代工",
+        "Memory-Module": "記憶體-模組廠",
+        "Memory-Controller": "記憶體-控制 IC",
+        "Semi-Equip": "半導體-設備/CoWoS",
+        "CPO-Silicon": "矽光子 (CPO/光通訊)",
+        "AI-Case": "AI 伺服器 (機殼/滑軌)",
+        "AI-Cooling": "AI 伺服器 (散熱/水冷)",
+        "AI-ODM": "AI 伺服器 (ODM 代工)",
+        "Power-Grid": "重電/電力 (政策股)",
+        "Shipping": "航運 (貨櫃/散裝)"
+    }
+
+    # 分析時使用的代碼定義
+    INDUSTRY_CHAINS_EN = {
+        "PCB-Material": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO"],
+        "PCB-Substrate": ["8046.TW", "3037.TW", "3189.TW"],
+        "PCB-HDI": ["2367.TW", "2313.TW", "2368.TW", "4958.TW"],
+        "Memory-Fab": ["2344.TW", "2337.TW", "2408.TW"],
+        "Memory-Module": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO"],
+        "Memory-Controller": ["8299.TW", "4966.TW", "6233.TWO"],
+        "Semi-Equip": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO"],
+        "CPO-Silicon": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW"],
+        "AI-Case": ["8210.TW", "2059.TW", "6803.TW", "3693.TW"],
+        "AI-Cooling": ["3017.TW", "3324.TW", "2421.TW", "6230.TW"],
+        "AI-ODM": ["2382.TW", "2317.TW", "3231.TW", "6669.TW"],
+        "Power-Grid": ["1513.TW", "1503.TW", "1519.TW", "1514.TW"],
+        "Shipping": ["2603.TW", "2609.TW", "2615.TW", "2606.TW"]
+    }
+
+    with st.spinner('正在掃描全台股細分產業資金流向...'):
+        flow_report = []
+        for en_id, tickers in INDUSTRY_CHAINS_EN.items():
+            try:
+                data = yf.download(tickers, period="10d", progress=False)
+                if not data.empty:
+                    # 1. 漲跌幅計算
+                    ret = (data['Close'].iloc[-1] / data['Close'].iloc[-2] - 1).mean() * 100
+                    # 2. 資金流入比 (今日成交量 / 5日均量)
+                    vol_ratio = data['Volume'].iloc[-1].sum() / data['Volume'].tail(5).mean().sum()
+                    flow_report.append({"ID": en_id, "漲跌%": ret, "資金流入": vol_ratio})
+            except: continue
         
+        df_flow = pd.DataFrame(flow_report)
+
         if not df_flow.empty:
-            # --- AI 預測區：找出「量增但漲幅尚未大爆發」的補漲區段 ---
+            # --- 🔮 AI 輪動預判區 (您的核心邏輯) ---
+            # 條件：資金強勢爆量 (>1.25) 且 漲幅尚未過大 (<1.5%)
             poten = df_flow[(df_flow['資金流入'] > 1.25) & (df_flow['漲跌%'] < 1.5)]
+            
             if not poten.empty:
-                # 排序選出資金流入最強的一組
-                next_hot = poten.sort_values(by="資金流入", ascending=False).iloc[0]['產業細分']
-                st.success(f"🔮 **AI 輪動預判：資金正在低位進場【 {next_hot} 】，具備補漲潛力，建議觀察。**")
+                # 排序選出量能最強的黑馬
+                next_id = poten.sort_values(by="資金流入", ascending=False).iloc[0]['ID']
+                st.success(f"🔮 **AI 輪動預判：資金正在進場【 {name_map[next_id]} 】，具備補漲潛力。**")
             else:
+                # 保留您的警示邏輯：若無明確標的，則提示資金分散
                 st.warning("⚠️ 市場目前資金較為分散，尚未出現明顯的「爆量起漲」黑馬區段。")
-            
+
             st.divider()
-            
-            # --- 數據排行表 ---
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("📈 **今日強勢排行 (漲幅)**")
-                st.dataframe(df_flow.sort_values(by="漲跌%", ascending=False).head(8), use_container_width=True)
-            with col2:
-                st.write("💰 **資金流入強度 (量能)**")
-                st.dataframe(df_flow.sort_values(by="資金流入", ascending=False).head(8), use_container_width=True)
-            
-            # 📊 繪製英文標籤圖表 (防止亂碼)
-            st.write("📈 **Sector Money Flow (量能流入強度排行)**")
+
+            # --- 📊 英文圖表顯示 (防亂碼) ---
+            st.write("📈 **Sector Money Flow (資金流入強度分析)**")
             fig, ax = plt.subplots(figsize=(10, 6))
             df_plot = df_flow.sort_values(by="資金流入")
             ax.barh(df_plot['ID'], df_plot['資金流入'], color='gold', edgecolor='black')
-            ax.axvline(x=1.0, color='red', ls='--', alpha=0.6) # 基準線
+            ax.axvline(x=1.0, color='red', ls='--', alpha=0.6) # 1.0 平衡線
             ax.set_xlabel("Volume Ratio (Today/5D Avg)")
             st.pyplot(fig)
 
-            # 📝 圖表下方的中文註解 (根據對照表生成)
-            st.markdown("#### 📘 圖表分類註解 (Sector Legends):")
-            # 每列顯示兩個註解，增加 Scannability
-            cols = st.columns(2)
-            sorted_en_names = df_plot['ID'].tolist()[::-1] # 依強度降序排列註解
-            for i, en_id in enumerate(sorted_en_names):
-                with cols[i % 2]:
+            # --- 📝 雙列中文註解 (Sector Legends) ---
+            st.markdown("#### 📘 圖表分類中文註解 (Sector Legends):")
+            c1, c2 = st.columns(2)
+            # 依量能由高到低排列註解
+            sorted_en_ids = df_plot['ID'].tolist()[::-1]
+            for i, en_id in enumerate(sorted_en_ids):
+                with (c1 if i % 2 == 0 else c2):
                     st.write(f"- **{en_id}**: {name_map[en_id]}")
             
             st.divider()
+
+            # --- 📋 詳細數據明細 (隱藏最左邊數字) ---
             st.write("📋 **詳細數據明細**")
-            # 表格內依然可以使用中文對照顯示
-            df_flow['產業名稱'] = df_flow['ID'].map(name_map)
-            st.dataframe(df_flow[['產業名稱', '漲跌%', '資金流入']].sort_values(by='漲跌%', ascending=False), use_container_width=True)
+            df_display = df_flow.copy()
+            df_display['產業名稱'] = df_display['ID'].map(name_map)
+            # 關鍵：hide_index=True 移除最左側 0, 1, 2... 的無意義序號
+            st.dataframe(
+                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
+                use_container_width=True,
+                hide_index=True
+            )
         else:
-            st.error("無法取得數據。")
+            st.error("暫時無法取得數據，請確認網路或 API 連線。")
 
 elif st.session_state.mode == "realtime":
     from datetime import datetime, time
@@ -662,6 +732,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
