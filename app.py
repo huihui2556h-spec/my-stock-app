@@ -185,7 +185,7 @@ if st.session_state.mode == "home":
             st.session_state.mode = "forecast"
             st.rerun()
     with col_c:
-        if st.button("💎 類群輪動預警", use_container_width=True): navigate_to("sector")
+        if st.button("💎 類群輪動預警", use_container_width=True):
             st.session_state.mode = "sector"
             st.rerun()
 # --- A. 💎 類群輪動預警頁面 ---
@@ -649,6 +649,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
