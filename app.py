@@ -4,7 +4,7 @@ import yfinance as yf
 import numpy as np
 import requests
 import re
-from datetime import datetime
+from datetime import datetime, time
 import pytz
 import matplotlib.pyplot as plt
 import matplotlib
@@ -118,6 +118,78 @@ def stock_box(label, price, pct, acc, color_type="red"):
             <p style="margin-top:10px; font-size:12px; color:#888;">↳ 近20日達成率：{acc:.1f}%</p>
         </div>
     """, unsafe_allow_html=True)
+沒問題！要做到最精準的資金輪動監測，我們必須把台股的「核心神經系統」全部拆解開來。
+
+除了您原本要求的 PCB 上中下游 與 記憶體細分，我再補齊了 AI 伺服器鏈（機殼、散熱、代工）、半導體設備（CoWoS、矽光子）、光學與手機組件、以及重電與能源政策股。
+
+這份程式碼已經將台股目前最活躍的 12 個細分產業鏈 全部數位化，並配上動態量能監測與地毯式中文註解。
+
+🚀 全產業鏈深度監控版：含 12 組細分分類與 AI 輪動預判
+Python
+import streamlit as st
+import pandas as pd
+import yfinance as yf
+import numpy as np
+import requests
+import re
+from datetime import datetime, time
+import pytz
+import matplotlib.pyplot as plt
+import matplotlib
+
+# =========================================================
+# 1. 終極細分產業鏈地圖 (補全 PCB、記憶體、AI 鏈、重電)
+# =========================================================
+INDUSTRY_CHAINS = {
+    # --- PCB 產業鏈深度細分 ---
+    "PCB-材料 (CCL/銅箔)": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO", "3645.TW"],
+    "PCB-載板 (ABF/BT)": ["8046.TW", "3037.TW", "3189.TW"],
+    "PCB-組裝與加工 (硬板/HDI)": ["2367.TW", "2313.TW", "2368.TW", "4958.TW", "6108.TW"],
+    
+    # --- 記憶體產業鏈細分 ---
+    "記憶體-原廠/代工": ["2344.TW", "2337.TW", "2408.TW"],
+    "記憶體-模組廠": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO", "4967.TW"],
+    "記憶體-控制 IC": ["8299.TW", "4966.TW", "6233.TWO"],
+
+    # --- AI 與半導體核心鏈 ---
+    "半導體-設備/CoWoS": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO", "6640.TWO"],
+    "矽光子 (CPO/光通訊)": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW", "3450.TW"],
+    "AI 伺服器 (機殼/滑軌)": ["8210.TW", "2059.TW", "6803.TW", "3693.TW"],
+    "AI 伺服器 (散熱/水冷)": ["3017.TW", "3324.TW", "2421.TW", "6230.TW", "3338.TW"],
+    "AI 伺服器 (ODM 代工)": ["2382.TW", "2317.TW", "3231.TW", "6669.TW", "2356.TW"],
+
+    # --- 其他關鍵產業 ---
+    "重電/電力 (電網升級)": ["1513.TW", "1503.TW", "1519.TW", "1514.TW", "1504.TW"],
+    "光學鏡頭 (手機/車用)": ["3008.TW", "3406.TW", "3504.TW", "3362.TWO"],
+    "航運 (貨櫃/散裝)": ["2603.TW", "2609.TW", "2615.TW", "2606.TW"]
+}
+
+# =========================================================
+# 2. 核心運算：全自動資金流向分析
+# =========================================================
+
+def analyze_full_flow():
+    """【分析引擎】針對所有細分區段計算：1. 平均漲跌幅 2. 資金流入比 (今日量/5日均量)"""
+    flow_report = []
+    # 遍歷每一組產業鏈
+    for chain_name, tickers in INDUSTRY_CHAINS.items():
+        try:
+            # 抓取 10 天數據以便計算 5 日平均成交量
+            data = yf.download(tickers, period="10d", progress=False)
+            if data.empty: continue
+            
+            # 1. 漲跌幅計算 (今日收盤 vs 昨日收盤)
+            ret = (data['Close'].iloc[-1] / data['Close'].iloc[-2] - 1).mean() * 100
+            
+            # 2. 資金流入強度計算 (今日總量 / 近五日平均總量)
+            # 數值 > 1.0 代表該細分產業今日熱度高於平日，為資金焦點
+            today_vol = data['Volume'].iloc[-1].sum()
+            avg_vol_5d = data['Volume'].tail(5).mean().sum()
+            inflow_ratio = today_vol / avg_vol_5d if avg_vol_5d > 0 else 1.0
+            
+            flow_report.append({"產業細分": chain_name, "漲跌%": ret, "資金流入": inflow_ratio})
+        except: continue
+    return pd.DataFrame(flow_report)
 # ================== 介面控制 ==================
 if st.session_state.mode == "home":
     st.title("⚖️ 台股 AI 交易決策系統")
@@ -130,10 +202,56 @@ if st.session_state.mode == "home":
         if st.button("📊 隔日當沖及波段預估", use_container_width=True):
             st.session_state.mode = "forecast"
             st.rerun()
+    with col_c:
+        if st.button("💎 類群輪動預警", use_container_width=True): navigate_to("sector")
+             st.session_state.mode = "sector"
+            st.rerun()
+# --- A. 💎 類群輪動預警頁面 ---
+if st.session_state.mode == "sector":
+    if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
+    st.title("💎 產業鏈深度資金監控")
+    st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
+    
+    with st.spinner('掃描全台股資金流向中...'):
+        df_flow = analyze_full_flow()
+        
+        if not df_flow.empty:
+            # --- AI 預測區：找出「量增但漲幅尚未大爆發」的補漲區段 ---
+            poten = df_flow[(df_flow['資金流入'] > 1.25) & (df_flow['漲跌%'] < 1.5)]
+            if not poten.empty:
+                # 排序選出資金流入最強的一組
+                next_hot = poten.sort_values(by="資金流入", ascending=False).iloc[0]['產業細分']
+                st.success(f"🔮 **AI 輪動預判：資金正在低位進場【 {next_hot} 】，具備補漲潛力，建議觀察。**")
+            else:
+                st.warning("⚠️ 市場目前資金較為分散，尚未出現明顯的「爆量起漲」黑馬區段。")
+            
+            st.divider()
+            
+            # --- 數據排行表 ---
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("📈 **今日強勢排行 (漲幅)**")
+                st.dataframe(df_flow.sort_values(by="漲跌%", ascending=False).head(8), use_container_width=True)
+            with col2:
+                st.write("💰 **資金流入強度 (量能)**")
+                st.dataframe(df_flow.sort_values(by="資金流入", ascending=False).head(8), use_container_width=True)
+            
+            # --- 資金熱力圖 (解決亂碼版) ---
+            st.divider()
+            st.write("📊 **全產業鏈資金流入強度 (紅色虛線 1.0 為熱度平衡點)**")
+            fig, ax = plt.subplots(figsize=(10, 8))
+            df_sorted = df_flow.sort_values(by="資金流入")
+            ax.barh(df_sorted['產業細分'], df_sorted['資金流入'], color='gold', edgecolor='black')
+            ax.axvline(x=1.0, color='red', ls='--', alpha=0.6) # 基準量能線
+            ax.set_xlabel("Volume Ratio (Today/5D Avg)")
+            st.pyplot(fig)
+            st.caption("※ 黃色長條長度代表今日成交量相對於平日的倍數。超過 1.0 即代表大戶資金正在湧入。")
+        else:
+            st.error("無法取得數據。")
 
-elif st.session_state.mode == "realtime":
-    from datetime import datetime, time
-    import pytz
+    elif st.session_state.mode == "realtime":
+        from datetime import datetime, time
+        import pytz
     
     if st.sidebar.button("⬅️ 返回首頁"): 
         st.session_state.mode = "home"
@@ -549,6 +667,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
