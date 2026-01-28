@@ -218,16 +218,29 @@ if st.session_state.mode == "sector":
                 st.write("💰 **資金流入強度 (量能)**")
                 st.dataframe(df_flow.sort_values(by="資金流入", ascending=False).head(8), use_container_width=True)
             
-            # --- 資金熱力圖 (解決亂碼版) ---
-            st.divider()
-            st.write("📊 **全產業鏈資金流入強度 (紅色虛線 1.0 為熱度平衡點)**")
-            fig, ax = plt.subplots(figsize=(10, 8))
-            df_sorted = df_flow.sort_values(by="資金流入")
-            ax.barh(df_sorted['產業細分'], df_sorted['資金流入'], color='gold', edgecolor='black')
-            ax.axvline(x=1.0, color='red', ls='--', alpha=0.6) # 基準量能線
+            # 📊 繪製英文標籤圖表 (防止亂碼)
+            st.write("📈 **Sector Money Flow (量能流入強度排行)**")
+            fig, ax = plt.subplots(figsize=(10, 6))
+            df_plot = df_flow.sort_values(by="資金流入")
+            ax.barh(df_plot['ID'], df_plot['資金流入'], color='gold', edgecolor='black')
+            ax.axvline(x=1.0, color='red', ls='--', alpha=0.6) # 基準線
             ax.set_xlabel("Volume Ratio (Today/5D Avg)")
             st.pyplot(fig)
-            st.caption("※ 黃色長條長度代表今日成交量相對於平日的倍數。超過 1.0 即代表大戶資金正在湧入。")
+
+            # 📝 圖表下方的中文註解 (根據對照表生成)
+            st.markdown("#### 📘 圖表分類註解 (Sector Legends):")
+            # 每列顯示兩個註解，增加 Scannability
+            cols = st.columns(2)
+            sorted_en_names = df_plot['ID'].tolist()[::-1] # 依強度降序排列註解
+            for i, en_id in enumerate(sorted_en_names):
+                with cols[i % 2]:
+                    st.write(f"- **{en_id}**: {name_map[en_id]}")
+            
+            st.divider()
+            st.write("📋 **詳細數據明細**")
+            # 表格內依然可以使用中文對照顯示
+            df_flow['產業名稱'] = df_flow['ID'].map(name_map)
+            st.dataframe(df_flow[['產業名稱', '漲跌%', '資金流入']].sort_values(by='漲跌%', ascending=False), use_container_width=True)
         else:
             st.error("無法取得數據。")
 
@@ -649,6 +662,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
