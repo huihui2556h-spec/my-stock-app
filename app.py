@@ -245,12 +245,31 @@ if st.session_state.mode == "sector":
             
             st.subheader("🎯 AI 低基期潛力產業建議")
             if not low_base_candidates.empty:
+                # 1. 鎖定潛力產業
                 best_bet = low_base_candidates.sort_values(by="資金流入", ascending=False).iloc[0]
                 best_id = best_bet['ID']
+                
                 st.success(f"🚀 **【潛力補漲關注】：{name_map[best_id]}**")
-                st.info(f"💡 理由：資金溫和流入 {best_bet['資金流入']:.2f} 倍，且漲幅僅 {best_bet['漲跌%']:.2f}%，基期低且未過熱。")
-            else:
-                st.warning("⚠️ 目前強金流產業多已處於高位，建議觀望。")
+                
+                # 2. 自動抓取該族群內的具體標的
+                target_tickers = INDUSTRY_CHAINS_EN.get(best_id, [])
+                
+                if target_tickers:
+                    st.write(f"💡 **族群內推薦標的：**")
+                    # 建立美觀的推薦卡片
+                    cols = st.columns(len(target_tickers))
+                    for idx, ticker in enumerate(target_tickers):
+                        try:
+                            # 獲取個股名稱與今日表現
+                            t_data = yf.Ticker(ticker)
+                            t_name = get_stock_name(ticker.split('.')[0])
+                            t_price = t_data.history(period="2d")
+                            if len(t_price) >= 2:
+                                t_ret = (t_price['Close'].iloc[-1] / t_price['Close'].iloc[-2] - 1) * 100
+                                with cols[idx]:
+                                    st.metric(label=t_name, value=f"{t_price['Close'].iloc[-1]:.2f}", delta=f"{t_ret:.2f}%")
+                        except:
+                            continue
 
             st.divider()
             # --- 📋 詳細數據表格 (隱藏左邊數字) ---
@@ -705,6 +724,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
