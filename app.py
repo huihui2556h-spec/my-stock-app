@@ -204,61 +204,46 @@ if st.session_state.mode == "sector":
     
    
     
-    with st.spinner('正在掃描全台股細分產業資金流向'):
+    with st.spinner('AI 正在計算各產業獲利潛力...'):
         flow_report = []
-       
         for en_id, tickers in INDUSTRY_CHAINS_EN.items():
             try:
                 data = yf.download(tickers, period="10d", progress=False)
                 if not data.empty:
-                    # 1. 漲跌幅計算
                     ret = (data['Close'].iloc[-1] / data['Close'].iloc[-2] - 1).mean() * 100
-                    # 2. 資金流入比 (今日成交量 / 5日均量)
                     vol_ratio = data['Volume'].iloc[-1].sum() / data['Volume'].tail(5).mean().sum()
                     flow_report.append({"ID": en_id, "漲跌%": ret, "資金流入": vol_ratio})
-            except: 
-                continue
+            except: continue
         
         df_flow = pd.DataFrame(flow_report)
 
         if not df_flow.empty:
-            # --- 🔮 AI 輪動預判區 (您的核心邏輯) ---
-            # 條件：資金強勢爆量 (>1.25) 且 漲幅尚未過大 (<1.5%)
-            poten = df_flow[(df_flow['資金流入'] > 1.25) & (df_flow['漲跌%'] < 1.5)]
+            # --- 🔮 核心：建議買進判斷邏輯 ---
+            # 策略：資金爆量 (流入>1.2) 且 今日有撐 (漲幅>-0.5)
+            buy_candidates = df_flow[(df_flow['資金流入'] > 1.2) & (df_flow['漲跌%'] > -0.5)]
             
-            if not poten.empty:
-                # 排序選出量能最強的黑馬
-                next_id = poten.sort_values(by="資金流入", ascending=False).iloc[0]['ID']
-                st.success(f"🔮 **AI 輪動預判：資金正在進場【 {name_map[next_id]} 】，具備補漲潛力。**")
+            st.subheader("🎯 AI 買進決策建議")
+            if not buy_candidates.empty:
+                # 排序出最推薦的類股
+                best_sector_id = buy_candidates.sort_values(by="資金流入", ascending=False).iloc[0]['ID']
+                st.success(f"🚀 **【強烈建議關注】：{name_map[best_sector_id]}**")
+                st.info(f"💡 理由：該族群資金流入強度達 {buy_candidates['資金流入'].max():.2f} 倍，顯示大戶籌碼高度集中，今日股價同步走強，發動機率高。")
             else:
-                # 保留您的警示邏輯：若無明確標的，則提示資金分散
-                st.warning("⚠️ 市場目前資金較為分散，尚未出現明顯的「爆量起漲」黑馬區段。")
+                st.warning("⚠️ 目前多數類股處於縮量或盤整期，暫無「爆量起漲」標的，建議保留資金分批布局。")
 
             st.divider()
-            # --- 📋 詳細數據明細 (隱藏最左邊數字) ---
-            st.write("📋 **詳細數據明細**")
-            df_display = df_flow.copy()
-            df_display['產業名稱'] = df_display['ID'].map(name_map)
-            # 關鍵：hide_index=True 移除最左側 0, 1, 2... 的無意義序號
-            st.dataframe(
-                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
-                use_container_width=True,
-                hide_index=True
-            )
 
-            # --- 📊 英文圖表顯示 (防亂碼) ---
-            st.write("📈 **Sector Money Flow (資金流入強度分析)**")
+            # --- 📊 繪製圖表 (英文標籤) ---
+            st.write("📈 **Sector Money Flow (資金流入排行榜)**")
             fig, ax = plt.subplots(figsize=(10, 6))
             df_plot = df_flow.sort_values(by="資金流入")
             ax.barh(df_plot['ID'], df_plot['資金流入'], color='gold', edgecolor='black')
-            ax.axvline(x=1.0, color='red', ls='--', alpha=0.6) # 1.0 平衡線
-            ax.set_xlabel("Volume Ratio (Today/5D Avg)")
+            ax.axvline(x=1.0, color='red', ls='--', alpha=0.6)
             st.pyplot(fig)
 
-            # --- 📝 雙列中文註解 (Sector Legends) ---
-            st.markdown("#### 📘 圖表分類中文註解 (Sector Legends):")
+            # --- 📝 中文註解 ---
+            st.markdown("#### 📘 分類註解 (Legends):")
             c1, c2 = st.columns(2)
-            # 依量能由高到低排列註解
             sorted_en_ids = df_plot['ID'].tolist()[::-1]
             for i, en_id in enumerate(sorted_en_ids):
                 with (c1 if i % 2 == 0 else c2):
@@ -266,6 +251,15 @@ if st.session_state.mode == "sector":
             
             st.divider()
 
+            # --- 📋 詳細數據表格 (隱藏左邊數字) ---
+            st.write("📋 **詳細數據明細**")
+            df_display = df_flow.copy()
+            df_display['產業名稱'] = df_display['ID'].map(name_map)
+            st.dataframe(
+                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
+                use_container_width=True,
+                hide_index=True
+            )
             
         else:
             st.error("暫時無法取得數據，請確認網路或 API 連線。")
@@ -688,6 +682,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
