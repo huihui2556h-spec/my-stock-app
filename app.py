@@ -650,11 +650,11 @@ elif st.session_state.mode == "forecast":
                    bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
                    bias = max(0.97, min(1.04, bias)) 
 
-    df_ml = df.tail(30).copy() 
+                   df_ml = df.tail(30).copy() 
                 # 2. 建立預測目標：明天的最高價
-    df_ml['Next_High'] = df_ml['High'].shift(-1)
+                   df_ml['Next_High'] = df_ml['High'].shift(-1)
                 # 3. 刪除最後一行(因為最後一行沒有「明天」的資料)
-    df_ml = df_ml.dropna()
+                   df_ml = df_ml.dropna()
 if len(df_ml) > 10:
     # ...前面是訓練模型...
     # 預測值乘上 f_score，讓基本面好的股票預估值更高
@@ -755,6 +755,7 @@ else:
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
