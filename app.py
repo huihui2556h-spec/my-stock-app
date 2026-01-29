@@ -628,48 +628,75 @@ elif st.session_state.mode == "forecast":
                 with m3: stock_box("🚩 五日壓力", curr_c + atr*1.9*bias, ((curr_c + atr*1.9*bias)/curr_c - 1)*100, acc_wh, "red")
                 with m4: stock_box("⚓ 五日支撐", curr_c - atr*1.6/bias, ((curr_c - atr*1.6/bias)/curr_c - 1)*100, acc_wl, "green")
 
-                # --- [新加入點 1：財報因子抓取] ---
-# 在 fetch_stock_data 之後，計算 bias 之前
+            if not df.empty:
+                # --- [1. 基礎數據與財報評分] ---
+                df = df.ffill()
+                curr_c = float(df['Close'].iloc[-1])
+                prev_close = float(df['Close'].iloc[-2])
+                tick = get_tick_size(curr_c)
+                
+                # 新加入：財報影響力因子
                 stock_info = yf.Ticker(f"{stock_id}.TW")
                 f_score = 1.0
                 try:
-                   info = stock_info.info
-    # 抓取毛利與營收成長
-                   margin = info.get('grossMargins', 0.2)
-                   rev_growth = info.get('revenueGrowth', 0)
-    # 根據財報表現給予評分加成
-                   if margin > 0.3: f_score += 0.02
-                   if rev_growth > 0.1: f_score += 0.03
+                    info = stock_info.info
+                    margin = info.get('grossMargins', 0.2)
+                    rev_growth = info.get('revenueGrowth', 0)
+                    if margin > 0.3: f_score += 0.02
+                    if rev_growth > 0.1: f_score += 0.03
                 except: 
-                   pass
+                    pass
 
-# --- [新加入點 2：產業動能修正] ---
-# 這裡原本只有單純的 sector_momentum，現在整合進 bias
-                   sector_bias = 1 + (sector_momentum * 0.005)
-# 最終 Bias 整合：量能 + 族群 + 財報
-                   bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
-                   bias = max(0.97, min(1.04, bias)) 
+                # --- [2. 族群與 Bias 計算] ---
+                relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
+                # 族群動能必須在 bias 之前計算
+                sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
+                sector_bias = 1 + (sector_momentum * 0.005)
+                
+                # 整合量能、族群與財報
+                bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
+                bias = max(0.97, min(1.04, bias)) 
 
-                   df_ml = df.tail(30).copy() 
-                # 2. 建立預測目標：明天的最高價
-                   df_ml['Next_High'] = df_ml['High'].shift(-1)
-                # 3. 刪除最後一行(因為最後一行沒有「明天」的資料)
-                   df_ml = df_ml.dropna()
-               if len(df_ml) > 10:
-    # ...前面是訓練模型...
-    # 預測值乘上 f_score，讓基本面好的股票預估值更高
-                   ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
-                   ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
+                # --- [3. 機器學習訓練數據準備] ---
+                # 解決 NameError: 確保 df_ml 在被使用前已完全定義且縮排正確
+                df_ml = df.tail(30).copy() 
+                df_ml['Next_High'] = df_ml['High'].shift(-1)
+                df_ml = df_ml.dropna()
 
-# --- [新加入點 4：AI 統整建議顯示] ---
-# 在顯示收盤價的大卡片上方
-                  st.subheader("🎯 AI 全維度投資決策")
-               if relative_volume > 1.2 and sector_momentum > 0 and f_score > 1.0:
-                  st.success(f"🔥 **強烈看好**：量能、族群、財報三強鼎立，預期挑戰 {ml_tomorrow_high}")
-               elif relative_volume < 0.8:
-                  st.warning("💤 **冷清觀望**：目前量縮，缺乏主力介入。")
-               else:
-                st.info("⚖️ **中性布局**：建議守住支撐位。")
+                # 初始化預測值，避免後續顯示報錯
+                ml_tomorrow_high = curr_c * 1.01 
+
+                if len(df_ml) > 10:
+                    from sklearn.linear_model import LinearRegression
+                    from sklearn.preprocessing import StandardScaler
+                    
+                    features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    X_ml = df_ml[features_ml]
+                    y_ml = df_ml['Next_High']
+                    
+                    scaler_ml = StandardScaler()
+                    X_scaled = scaler_ml.fit_transform(X_ml)
+                    
+                    model_ml = LinearRegression()
+                    model_ml.fit(X_scaled, y_ml)
+                    
+                    # 預測明日最高價
+                    latest_data = df[features_ml].tail(1)
+                    latest_scaled = scaler_ml.transform(latest_data)
+                    # 預測值結合財報權重修正
+                    ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
+                    ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
+
+                # --- [4. AI 統整投資建議] ---
+                st.subheader("🎯 AI 全維度投資決策")
+                if relative_volume > 1.2 and sector_momentum > 0 and f_score > 1.0:
+                    st.success(f"🔥 **強烈看好**：量能、族群、財報三強鼎立，預期挑戰 {ml_tomorrow_high:.2f}")
+                elif relative_volume < 0.8:
+                    st.warning("💤 **冷清觀望**：目前量縮，缺乏主力介入。")
+                else:
+                    st.info("⚖️ **中性布局**：建議守住支撐位。")
+
+               
 
                # --- 📈 走勢圖與 AI 預估區間 ---
                 st.divider()
@@ -755,6 +782,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
