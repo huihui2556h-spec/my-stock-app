@@ -633,22 +633,22 @@ elif st.session_state.mode == "forecast":
                 stock_info = yf.Ticker(f"{stock_id}.TW")
                 f_score = 1.0
                 try:
-                info = stock_info.info
+                   info = stock_info.info
     # 抓取毛利與營收成長
-                margin = info.get('grossMargins', 0.2)
-                rev_growth = info.get('revenueGrowth', 0)
+                   margin = info.get('grossMargins', 0.2)
+                   rev_growth = info.get('revenueGrowth', 0)
     # 根據財報表現給予評分加成
-                if margin > 0.3: f_score += 0.02
-                if rev_growth > 0.1: f_score += 0.03
-           except: 
-                pass
+                   if margin > 0.3: f_score += 0.02
+                   if rev_growth > 0.1: f_score += 0.03
+              except: 
+                   pass
 
 # --- [新加入點 2：產業動能修正] ---
 # 這裡原本只有單純的 sector_momentum，現在整合進 bias
-             sector_bias = 1 + (sector_momentum * 0.005)
+                sector_bias = 1 + (sector_momentum * 0.005)
 # 最終 Bias 整合：量能 + 族群 + 財報
-             bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
-             bias = max(0.97, min(1.04, bias)) 
+                bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
+                bias = max(0.97, min(1.04, bias)) 
 
 # --- [新加入點 3：ML 預測修正] ---
 # 在 LinearRegression 預測那一行
@@ -752,6 +752,7 @@ else:
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
