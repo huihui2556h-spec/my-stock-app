@@ -628,18 +628,45 @@ elif st.session_state.mode == "forecast":
                 with m3: stock_box("🚩 五日壓力", curr_c + atr*1.9*bias, ((curr_c + atr*1.9*bias)/curr_c - 1)*100, acc_wh, "red")
                 with m4: stock_box("⚓ 五日支撐", curr_c - atr*1.6/bias, ((curr_c - atr*1.6/bias)/curr_c - 1)*100, acc_wl, "green")
 
-                # ... (後續接當沖建議與圖表)
+                # --- [新加入點 1：財報因子抓取] ---
+# 在 fetch_stock_data 之後，計算 bias 之前
+stock_info = yf.Ticker(f"{stock_id}.TW")
+f_score = 1.0
+try:
+    info = stock_info.info
+    # 抓取毛利與營收成長
+    margin = info.get('grossMargins', 0.2)
+    rev_growth = info.get('revenueGrowth', 0)
+    # 根據財報表現給予評分加成
+    if margin > 0.3: f_score += 0.02
+    if rev_growth > 0.1: f_score += 0.03
+except: 
+    pass
 
-                # --- 4. [當沖建議區] 彩色橫向方塊 ---
-                st.divider()
-                st.markdown("### 🏹 明日當沖建議價格")
-                d1, d2, d3 = st.columns(3)
-                with d1:
-                    st.markdown(f'<div style="background:#EBF8FF; padding:20px; border-radius:10px; border: 1px solid #BEE3F8; text-align:center;"><b style="color:#2C5282;">🔹 強勢追多</b><br><h2 style="color:#2B6CB0; margin:10px 0;">{est_open - (atr * 0.1):.2f}</h2></div>', unsafe_allow_html=True)
-                with d2:
-                    st.markdown(f'<div style="background:#FFF5F5; padding:20px; border-radius:10px; border: 1px solid #FED7D7; text-align:center;"><b style="color:#9B2C2C;">🔹 低接買點</b><br><h2 style="color:#C53030; margin:10px 0;">{curr_c - (atr * 0.45):.2f}</h2></div>', unsafe_allow_html=True)
-                with d3:
-                    st.markdown(f'<div style="background:#F0FFF4; padding:20px; border-radius:10px; border: 1px solid #C6F6D5; text-align:center;"><b style="color:#22543D;">🔸 短線獲利</b><br><h2 style="color:#38A169; margin:10px 0;">{curr_c + (atr * 0.75):.2f}</h2></div>', unsafe_allow_html=True)
+# --- [新加入點 2：產業動能修正] ---
+# 這裡原本只有單純的 sector_momentum，現在整合進 bias
+sector_bias = 1 + (sector_momentum * 0.005)
+# 最終 Bias 整合：量能 + 族群 + 財報
+bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
+bias = max(0.97, min(1.04, bias)) 
+
+# --- [新加入點 3：ML 預測修正] ---
+# 在 LinearRegression 預測那一行
+if len(df_ml) > 10:
+    # ...前面是訓練模型...
+    # 預測值乘上 f_score，讓基本面好的股票預估值更高
+    ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
+    ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
+
+# --- [新加入點 4：AI 統整建議顯示] ---
+# 在顯示收盤價的大卡片上方
+st.subheader("🎯 AI 全維度投資決策")
+if relative_volume > 1.2 and sector_momentum > 0 and f_score > 1.0:
+    st.success(f"🔥 **強烈看好**：量能、族群、財報三強鼎立，預期挑戰 {ml_tomorrow_high}")
+elif relative_volume < 0.8:
+    st.warning("💤 **冷清觀望**：目前量縮，缺乏主力介入。")
+else:
+    st.info("⚖️ **中性布局**：建議守住支撐位。")
 
                # --- 📈 走勢圖與 AI 預估區間 ---
                 st.divider()
@@ -725,6 +752,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
