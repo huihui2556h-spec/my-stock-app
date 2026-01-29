@@ -630,8 +630,8 @@ elif st.session_state.mode == "forecast":
 
                 # --- [新加入點 1：財報因子抓取] ---
 # 在 fetch_stock_data 之後，計算 bias 之前
-stock_info = yf.Ticker(f"{stock_id}.TW")
-f_score = 1.0
+                stock_info = yf.Ticker(f"{stock_id}.TW")
+                f_score = 1.0
 try:
     info = stock_info.info
     # 抓取毛利與營收成長
@@ -752,6 +752,7 @@ else:
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
