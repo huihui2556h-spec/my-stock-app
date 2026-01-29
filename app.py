@@ -655,20 +655,20 @@ elif st.session_state.mode == "forecast":
                    df_ml['Next_High'] = df_ml['High'].shift(-1)
                 # 3. 刪除最後一行(因為最後一行沒有「明天」的資料)
                    df_ml = df_ml.dropna()
-if len(df_ml) > 10:
+               if len(df_ml) > 10:
     # ...前面是訓練模型...
     # 預測值乘上 f_score，讓基本面好的股票預估值更高
-    ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
-    ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
+                   ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
+                   ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
 
 # --- [新加入點 4：AI 統整建議顯示] ---
 # 在顯示收盤價的大卡片上方
-st.subheader("🎯 AI 全維度投資決策")
-if relative_volume > 1.2 and sector_momentum > 0 and f_score > 1.0:
-    st.success(f"🔥 **強烈看好**：量能、族群、財報三強鼎立，預期挑戰 {ml_tomorrow_high}")
-elif relative_volume < 0.8:
-    st.warning("💤 **冷清觀望**：目前量縮，缺乏主力介入。")
-else:
+                  st.subheader("🎯 AI 全維度投資決策")
+               if relative_volume > 1.2 and sector_momentum > 0 and f_score > 1.0:
+                  st.success(f"🔥 **強烈看好**：量能、族群、財報三強鼎立，預期挑戰 {ml_tomorrow_high}")
+               elif relative_volume < 0.8:
+                  st.warning("💤 **冷清觀望**：目前量縮，缺乏主力介入。")
+               else:
                 st.info("⚖️ **中性布局**：建議守住支撐位。")
 
                # --- 📈 走勢圖與 AI 預估區間 ---
@@ -755,6 +755,7 @@ else:
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
