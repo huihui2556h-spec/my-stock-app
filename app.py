@@ -628,43 +628,43 @@ elif st.session_state.mode == "forecast":
                 with m3: stock_box("🚩 五日壓力", curr_c + atr*1.9*bias, ((curr_c + atr*1.9*bias)/curr_c - 1)*100, acc_wh, "red")
                 with m4: stock_box("⚓ 五日支撐", curr_c - atr*1.6/bias, ((curr_c - atr*1.6/bias)/curr_c - 1)*100, acc_wl, "green")
 
-              if not df.empty:
+                if not df.empty:
                 # --- [1. 基礎數據與財報評分] ---
-                df = df.ffill()
-                curr_c = float(df['Close'].iloc[-1])
-                prev_close = float(df['Close'].iloc[-2])
-                tick = get_tick_size(curr_c)
+                 df = df.ffill()
+                 curr_c = float(df['Close'].iloc[-1])
+                 prev_close = float(df['Close'].iloc[-2])
+                 tick = get_tick_size(curr_c)
                 
                 # 新加入：財報影響力因子
-                stock_info = yf.Ticker(f"{stock_id}.TW")
-                f_score = 1.0
-                try:
+                 stock_info = yf.Ticker(f"{stock_id}.TW")
+                 f_score = 1.0
+                 try:
                     info = stock_info.info
                     margin = info.get('grossMargins', 0.2)
                     rev_growth = info.get('revenueGrowth', 0)
                     if margin > 0.3: f_score += 0.02
                     if rev_growth > 0.1: f_score += 0.03
-                except: 
-                    pass
+                 except: 
+                     pass
 
                 # --- [2. 族群與 Bias 計算] ---
-                relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
+                 relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
                 # 族群動能必須在 bias 之前計算
-                sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
-                sector_bias = 1 + (sector_momentum * 0.005)
+                 sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
+                 sector_bias = 1 + (sector_momentum * 0.005)
                 
                 # 整合量能、族群與財報
-                bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
-                bias = max(0.97, min(1.04, bias)) 
+                 bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
+                 bias = max(0.97, min(1.04, bias)) 
 
                 # --- [3. 機器學習訓練數據準備] ---
                 # 解決 NameError: 確保 df_ml 在被使用前已完全定義且縮排正確
-                df_ml = df.tail(30).copy() 
-                df_ml['Next_High'] = df_ml['High'].shift(-1)
-                df_ml = df_ml.dropna()
+                 df_ml = df.tail(30).copy() 
+                 df_ml['Next_High'] = df_ml['High'].shift(-1)
+                 df_ml = df_ml.dropna()
 
                 # 初始化預測值，避免後續顯示報錯
-                ml_tomorrow_high = curr_c * 1.01 
+                 ml_tomorrow_high = curr_c * 1.01 
 
                 if len(df_ml) > 10:
                     from sklearn.linear_model import LinearRegression
@@ -782,6 +782,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
