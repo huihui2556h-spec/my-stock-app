@@ -157,7 +157,7 @@ if st.session_state.mode == "home":
             st.session_state.mode = "realtime"
             st.rerun()
     with col_b:
-        if st.button("📊 隔日當沖及波段預估", use_container_width=True):
+        if st.button("📊 波段預估", use_container_width=True):
             st.session_state.mode = "forecast"
             st.rerun()
     with col_c:
@@ -434,7 +434,7 @@ elif st.session_state.mode == "forecast":
     if st.sidebar.button("⬅️ 返回首頁"):
         st.session_state.mode = "home"
         st.rerun()
-    st.title("📊 隔日當沖與波段預估")
+    st.title("📊 波段預估")
     stock_id = st.text_input("輸入代碼 (例: 2330)")
 
     if stock_id:
@@ -782,6 +782,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
