@@ -439,8 +439,8 @@ elif st.session_state.mode == "forecast":
 
     if stock_id:
         with st.spinner('AI 多因子計算與回測中...'):
-             df, sym = fetch_stock_data(stock_id)
-             if not df.empty:
+            df, sym = fetch_stock_data(stock_id)
+            if not df.empty:
                 # --- 1. [數據計算區] ---
                 df = df.ffill()
                 name = get_stock_name(stock_id)
@@ -628,7 +628,7 @@ elif st.session_state.mode == "forecast":
                 with m3: stock_box("🚩 五日壓力", curr_c + atr*1.9*bias, ((curr_c + atr*1.9*bias)/curr_c - 1)*100, acc_wh, "red")
                 with m4: stock_box("⚓ 五日支撐", curr_c - atr*1.6/bias, ((curr_c - atr*1.6/bias)/curr_c - 1)*100, acc_wl, "green")
 
-                if not df.empty:
+              if not df.empty:
                 # --- [1. 基礎數據與財報評分] ---
                 df = df.ffill()
                 curr_c = float(df['Close'].iloc[-1])
@@ -782,6 +782,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
