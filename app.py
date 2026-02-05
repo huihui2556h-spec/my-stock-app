@@ -238,6 +238,21 @@ elif st.session_state.mode == "sector":
                 best_sector_id = buy_candidates.sort_values(by="資金流入", ascending=False).iloc[0]['ID']
                 st.success(f"🚀 **【強烈建議關注】：{name_map[best_sector_id]}**")
                 st.info(f"💡 理由：該族群資金流入強度達 {buy_candidates['資金流入'].max():.2f} 倍，顯示大戶籌碼高度集中，今日股價同步走強，發動機率高。")
+                strong_tickers = INDUSTRY_CHAINS_EN.get(best_sector_id, [])
+                if strong_tickers:
+                    st.write(f"🔍 **{name_map[best_sector_id]} 領頭標的：**")
+                    s_cols = st.columns(len(strong_tickers))
+                    for idx, ticker in enumerate(strong_tickers):
+                        try:
+                            s_data = yf.Ticker(ticker)
+                            s_name = get_stock_name(ticker.split('.')[0]).replace("走勢圖", "").strip()
+                            s_price_df = s_data.history(period="2d")
+                            if len(s_price_df) >= 2:
+                                s_ret = (s_price_df['Close'].iloc[-1] / s_price_df['Close'].iloc[-2] - 1) * 100
+                                with s_cols[idx]:
+                                    st.metric(label=s_name, value=f"{s_price_df['Close'].iloc[-1]:.2f}", delta=f"{s_ret:.2f}%")
+                        except: continue
+            
             else:
                 st.warning("⚠️ 目前多數類股處於縮量或盤整期，暫無「爆量起漲」標的，建議保留資金分批布局。")
 
@@ -792,6 +807,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
