@@ -321,19 +321,19 @@ elif st.session_state.mode == "realtime":
        from datetime import datetime, time
        import pytz
     
-    if st.sidebar.button("⬅️ 返回首頁"): 
-        st.session_state.mode = "home"
-        st.rerun()
+       if st.sidebar.button("⬅️ 返回首頁"): 
+          st.session_state.mode = "home"
+          st.rerun()
         
-        st.title("⚡ 盤中即時量價（當沖）")
+          st.title("⚡ 盤中即時量價（當沖）")
 
     # 1. 設定台灣時區與時間判斷
-        tw_tz = pytz.timezone("Asia/Taipei")
-        now = datetime.now(tw_tz)
+          tw_tz = pytz.timezone("Asia/Taipei")
+          now = datetime.now(tw_tz)
     # 交易時間判斷：週一至週五 09:00 ~ 13:30
-        is_market_open = now.weekday() < 5 and (time(9, 0) <= now.time() <= time(13, 30))
+          is_market_open = now.weekday() < 5 and (time(9, 0) <= now.time() <= time(13, 30))
 
-        stock_id = st.text_input("輸入股票代碼（如：2330）")
+          stock_id = st.text_input("輸入股票代碼（如：2330）")
 
     if stock_id:
         df, sym = fetch_stock_data(stock_id, period="60d")
@@ -792,6 +792,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
