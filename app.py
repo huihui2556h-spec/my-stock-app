@@ -335,7 +335,7 @@ elif st.session_state.mode == "realtime":
 
           stock_id = st.text_input("輸入股票代碼（如：2330）")
 
-    if stock_id:
+      if stock_id:
         df, sym = fetch_stock_data(stock_id, period="60d")
         
         if df.empty:
@@ -792,6 +792,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
