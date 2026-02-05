@@ -171,7 +171,7 @@ elif st.session_state.mode == "sector":
     st.title("💎 產業鏈深度資金監控")
     
     # 2. 返回按鈕放在標題下方 (不放在 Sidebar，直接放在頁面裡)
-     if st.button("⬅️ 返回功能首頁", use_container_width=True):
+    if st.button("⬅️ 返回功能首頁", use_container_width=True):
         st.session_state.mode = "home"  # 這裡要改回 home
         st.rerun()
 
@@ -792,6 +792,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
