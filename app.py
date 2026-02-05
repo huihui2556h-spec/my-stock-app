@@ -150,7 +150,7 @@ def analyze_full_flow():
     return pd.DataFrame(flow_report)
 # ================== 介面控制 ==================
 
-    if st.session_state.mode == "home":
+if st.session_state.mode == "home":
        st.title("⚖️ 台股 AI 交易決策系統")
        col_a, col_b, col_c = st.columns(3)
     with col_a:
@@ -166,7 +166,7 @@ def analyze_full_flow():
             st.session_state.mode = "sector"
             st.rerun()
 # --- A. 💎 類群輪動預警頁面 ---
-        elif st.session_state.mode == "sector":
+elif st.session_state.mode == "sector":
     # 1. 標題放在最上面 (進入此模式後才顯示)
             st.title("💎 產業鏈深度資金監控")
     
@@ -792,6 +792,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
