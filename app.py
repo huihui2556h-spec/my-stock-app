@@ -318,8 +318,8 @@ def analyze_full_flow():
             st.error("暫時無法取得數據，請確認網路或 API 連線。")
 
 elif st.session_state.mode == "realtime":
-    from datetime import datetime, time
-    import pytz
+       from datetime import datetime, time
+       import pytz
     
     if st.sidebar.button("⬅️ 返回首頁"): 
         st.session_state.mode = "home"
@@ -792,6 +792,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
