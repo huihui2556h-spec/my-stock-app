@@ -149,7 +149,8 @@ def analyze_full_flow():
         except: continue
     return pd.DataFrame(flow_report)
 # ================== 介面控制 ==================
-if st.session_state.mode == "home":
+
+ if st.session_state.mode == "home":
     st.title("⚖️ 台股 AI 交易決策系統")
     col_a, col_b, col_c = st.columns(3)
     with col_a:
@@ -165,11 +166,19 @@ if st.session_state.mode == "home":
             st.session_state.mode = "sector"
             st.rerun()
 # --- A. 💎 類群輪動預警頁面 ---
-        if st.sidebar.button("⬅️ 返回首頁"):
-           st.session_state.mode = "sector"
-           st.rerun()
-           st.title("💎 類群輪動預警")
-           st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
+ elif st.session_state.mode == "sector":
+    # 1. 標題放在最上面 (進入此模式後才顯示)
+    st.title("💎 產業鏈深度資金監控")
+    
+    # 2. 返回按鈕放在標題下方 (不放在 Sidebar，直接放在頁面裡)
+    if st.button("⬅️ 返回功能首頁", use_container_width=True):
+        st.session_state.mode = "home"  # 這裡要改回 home
+        st.rerun()
+
+        st.divider() # 增加一條分隔線，美化版面
+    
+    # 3. 頁面提示與內容
+        st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
         name_map = {
         "PCB-CCL": "PCB-材料 (CCL/銅箔)",
         "PCB-Substrate": "PCB-載板 (ABF/BT)",
@@ -783,6 +792,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
