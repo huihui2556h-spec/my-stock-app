@@ -318,16 +318,16 @@ elif st.session_state.mode == "sector":
             st.error("暫時無法取得數據，請確認網路或 API 連線。")
 
 elif st.session_state.mode == "realtime":
-       from datetime import datetime, time
-       import pytz
-    
-       if st.sidebar.button("⬅️ 返回首頁"): 
+     st.title("⚡ 盤中即時量價（當沖）")
+     if st.sidebar.button("⬅️ 返回首頁"): 
           st.session_state.mode = "home"
           st.rerun()
+     st.divider()
         
-          st.title("⚡ 盤中即時量價（當沖）")
+          
 
-    # 1. 設定台灣時區與時間判斷
+          from datetime import datetime, time
+          import pytz
           tw_tz = pytz.timezone("Asia/Taipei")
           now = datetime.now(tw_tz)
     # 交易時間判斷：週一至週五 09:00 ~ 13:30
@@ -792,6 +792,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
