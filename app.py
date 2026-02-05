@@ -165,9 +165,10 @@ if st.session_state.mode == "home":
             st.session_state.mode = "sector"
             st.rerun()
 # --- A. 💎 類群輪動預警頁面 ---
-if st.session_state.mode == "sector":
-    if st.sidebar.button("⬅️ 返回首頁"): navigate_to("home")
-    st.title("💎 產業鏈深度資金監控")
+ if st.sidebar.button("⬅️ 返回首頁"):
+    st.session_state.mode = "sector"
+    st.rerun()
+    st.title("💎 類群輪動預警")
     st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
     name_map = {
         "PCB-CCL": "PCB-材料 (CCL/銅箔)",
@@ -782,6 +783,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
