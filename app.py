@@ -5,7 +5,7 @@ import numpy as np
 import requests
 import re
 import urllib3
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import pytz
 import matplotlib.pyplot as plt
 import matplotlib
@@ -985,6 +985,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
