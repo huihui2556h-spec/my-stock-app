@@ -22,58 +22,50 @@ st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
 
 def fetch_finmind_chips(stock_id, token="你的TOKEN"):
-    # 預設 6 個回傳值
-    res = (1.0, 0.0, 0.0, 0.0, 0.0, "找尋數據中")
-    
+    res = (1.0, 0.0, 0.0, 0.0, 0.0, "欄位錯誤")
     try:
         pure_id = stock_id.split('.')[0]
         url = "https://api.finmindtrade.com/api/v4/data"
+        start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
         
-        # 🟢 關鍵 1：時間拉長到 45 天，確保一定能跨過任何長假或維護期
-        start_date = (datetime.now() - timedelta(days=45)).strftime('%Y-%m-%d')
+        params = {"dataset": "InstitutionalInvestorsBuySell", "data_id": pure_id, "start_date": start_date, "token": token}
+        resp = requests.get(url, params=params, timeout=15, verify=False)
+        data = resp.json()
         
-        params = {
-            "dataset": "InstitutionalInvestorsBuySell",
-            "data_id": pure_id,
-            "start_date": start_date,
-            "token": token,
-        }
-        
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        # 🟢 關鍵 2：verify=False 避免 SSL 攔截
-        resp = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get('data'):
-                df = pd.DataFrame(data['data'])
-                
-                # 🟢 關鍵 3：排除買賣超皆為 0 的無效行
-                df['total'] = df['buy'] + df['sell']
-                df = df[df['total'] > 0] 
-                
-                if df.empty:
-                    return (1.0, 0.0, 0.0, 0.0, 0.0, "查無有效籌碼")
+        if data.get('status') == 200 and data.get('data'):
+            df = pd.DataFrame(data['data'])
+            
+            # 🟢 修正重點 1：檢查欄位名稱 (有些版本會叫 'name', 有些可能不同)
+            # 我們列印出來看，或是直接用 df.columns 檢查
+            target_col = 'name' if 'name' in df.columns else None
+            
+            if not target_col:
+                return (1.0, 0.0, 0.0, 0.0, 0.0, "API結構變更")
 
-                # 🟢 關鍵 4：抓取「有資料」的最後一個日期
-                latest_date = df['date'].max()
-                today_df = df[df['date'] == latest_date]
-                
-                def get_val(n):
-                    d = today_df[today_df['name']==n]
-                    return (d['buy'].sum() - d['sell'].sum()) / 1000 if not d.empty else 0.0
+            # 🟢 修正重點 2：過濾掉買賣超皆為 0 的無效日期
+            df = df[(df['buy'] != 0) | (df['sell'] != 0)]
+            latest_date = df['date'].max()
+            today_df = df[df['date'] == latest_date]
+            
+            # 內部計算函數
+            def get_net_val(investor_name):
+                # 同時支援 Foreign_Investor 或 外資 這種可能的名稱變動
+                row = today_df[today_df[target_col].str.contains(investor_name, case=False, na=False)]
+                return (row['buy'].sum() - row['sell'].sum()) / 1000 if not row.empty else 0.0
 
-                f, t, d = get_val('Foreign_Investor'), get_val('Investment_Trust'), get_val('Dealer_Self')
-                total = f + t + d
-                
-                # 計算 AI 分數
-                score = max(0.97, min(1.05, 1 + (total / 2000) * 0.015))
-                
-                return (float(score), float(total), float(f), float(t), float(d), str(latest_date))
-        
-        return (1.0, 0.0, 0.0, 0.0, 0.0, "API未回應")
+            f = get_net_val('Foreign_Investor')
+            t = get_net_val('Investment_Trust')
+            d = get_net_val('Dealer_Self')
+            
+            total = f + t + d
+            score = max(0.97, min(1.05, 1 + (total / 2000) * 0.015))
+            
+            return (float(score), float(total), float(f), float(t), float(d), str(latest_date))
+            
+        return (1.0, 0.0, 0.0, 0.0, 0.0, "查無數據")
     except Exception as e:
-        return (1.0, 0.0, 0.0, 0.0, 0.0, f"系統錯誤:{str(e)[:5]}")
+        # ✅ 這就是你在畫面上看到的錯誤來源
+        return (1.0, 0.0, 0.0, 0.0, 0.0, f"系統錯誤:{str(e)}")
         
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -975,6 +967,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
