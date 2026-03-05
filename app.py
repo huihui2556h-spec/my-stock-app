@@ -820,11 +820,8 @@ elif st.session_state.mode == "forecast":
 # 1. 向 FinMind 抓取數據
                 with st.spinner('🏦 正在同步法人籌碼'):
     # ✅ 接收 6 個值 (多了 chip_date)
-                chip_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
-
-# 2. 顯示籌碼即時看板 (Metrics)
-# ✅ 在標題加上日期顯示
-                st.subheader(f"📊 {stock_id} 三大法人籌碼監控 ({chip_date})")
+                  chip_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
+  
 
 # 🔍 檢查是否為當天數據的提醒
                 current_date = datetime.now().strftime('%Y-%m-%d')
@@ -955,6 +952,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
