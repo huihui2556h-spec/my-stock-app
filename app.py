@@ -22,22 +22,15 @@ st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
 
 def fetch_finmind_chips(stock_id, token="你的TOKEN"):
-    # 預設 6 個回傳值：分數, 合計, 外資, 投信, 自營, 日期
-    res = (1.0, 0.0, 0.0, 0.0, 0.0, "等待同步")
+    # 預設 6 個回傳值
+    res = (1.0, 0.0, 0.0, 0.0, 0.0, "找尋數據中")
     
-    # 建立具備自動重試功能的 Session
-    session = requests.Session()
-    retry = Retry(connect=3, backoff_factor=0.5)
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('https://', adapter)
-
     try:
-        # 確保代碼格式正確 (8358.TW -> 8358)
         pure_id = stock_id.split('.')[0]
         url = "https://api.finmindtrade.com/api/v4/data"
         
-        # 搜尋範圍拉長至 30 天，確保一定能抓到前一交易日
-        start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        # 🟢 關鍵 1：時間拉長到 45 天，確保一定能跨過任何長假或維護期
+        start_date = (datetime.now() - timedelta(days=45)).strftime('%Y-%m-%d')
         
         params = {
             "dataset": "InstitutionalInvestorsBuySell",
@@ -46,33 +39,41 @@ def fetch_finmind_chips(stock_id, token="你的TOKEN"):
             "token": token,
         }
         
-        # 偽裝標頭 + 關閉 SSL 驗證 (解決連線異常的關鍵)
         headers = {'User-Agent': 'Mozilla/5.0'}
-        response = session.get(url, params=params, headers=headers, timeout=15, verify=False)
+        # 🟢 關鍵 2：verify=False 避免 SSL 攔截
+        resp = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
         
-        if response.status_code == 200:
-            data = response.json()
+        if resp.status_code == 200:
+            data = resp.json()
             if data.get('data'):
                 df = pd.DataFrame(data['data'])
-                # 抓取該股票有資料的「最後一天」
+                
+                # 🟢 關鍵 3：排除買賣超皆為 0 的無效行
+                df['total'] = df['buy'] + df['sell']
+                df = df[df['total'] > 0] 
+                
+                if df.empty:
+                    return (1.0, 0.0, 0.0, 0.0, 0.0, "查無有效籌碼")
+
+                # 🟢 關鍵 4：抓取「有資料」的最後一個日期
                 latest_date = df['date'].max()
                 today_df = df[df['date'] == latest_date]
                 
-                # 計算三大法人 (單位：張)
                 def get_val(n):
                     d = today_df[today_df['name']==n]
                     return (d['buy'].sum() - d['sell'].sum()) / 1000 if not d.empty else 0.0
 
                 f, t, d = get_val('Foreign_Investor'), get_val('Investment_Trust'), get_val('Dealer_Self')
                 total = f + t + d
-                # AI 分數修正
+                
+                # 計算 AI 分數
                 score = max(0.97, min(1.05, 1 + (total / 2000) * 0.015))
                 
                 return (float(score), float(total), float(f), float(t), float(d), str(latest_date))
         
-        return (1.0, 0.0, 0.0, 0.0, 0.0, "API未回傳")
+        return (1.0, 0.0, 0.0, 0.0, 0.0, "API未回應")
     except Exception as e:
-        return (1.0, 0.0, 0.0, 0.0, 0.0, f"連線異常:{str(e)[:5]}")
+        return (1.0, 0.0, 0.0, 0.0, 0.0, f"系統錯誤:{str(e)[:5]}")
         
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -974,6 +975,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
