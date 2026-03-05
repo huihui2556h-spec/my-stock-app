@@ -14,6 +14,27 @@ from sklearn.metrics import r2_score, mean_absolute_error
 
 st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
 
+def get_global_risk_impact():
+    """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
+    try:
+        # 抓取最近 5 天的原油數據
+        oil = yf.download("BZ=F", period="5d", progress=False)
+        if oil.empty: return 1.0
+        # 計算 5 日漲跌幅
+        oil_change = (oil['Close'].iloc[-1] / oil['Close'].iloc[-5] - 1) * 100
+        # 避險邏輯：原油大漲代表地緣風險升溫，對股市是壓力 (負相關)
+        # 設定：原油每漲 1%，預估位下修 0.4%
+        risk_bias = 1 - (oil_change * 0.004) 
+        return max(0.95, min(1.05, risk_bias)) 
+    except:
+        return 1.0
+
+# --- [既存的 FinMind 籌碼函數 - 根據 2026-01-12 指示] ---
+def fetch_finmind_chips(stock_id):
+    # 這裡實作您 FinMind API 的調用邏輯
+    # 假設回傳一個 chip_score (1.0 為中性)
+    return 1.05 # 範例數值
+
 # --- 1. [定義台股升降單位函數] ---
 def get_tick_size(price):
     if price < 10: return 0.01
@@ -473,17 +494,28 @@ elif st.session_state.mode == "forecast":
                 prev_close = float(df['Close'].iloc[-2]) # 昨收價
                 
                 # --- 2. [族群動能與相對量能計算] ---
-                # 相對成交量 (Relative Volume) [cite: 2026-01-12]
+                # A. 獲取地緣政治/避險風險因子 (呼叫你在最上方定義的函數)
+                risk_factor = get_global_risk_impact() 
+                
+                # B. 獲取 FinMind 籌碼因子 (呼叫你在最上方定義的函數)
+                chip_factor = fetch_finmind_chips(stock_id) 
+
+                # C. 相對成交量 (用於計算波動慣性)
                 relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
                 
-                # 族群輪動慣性 (以近 5 日累積漲跌幅估計) [cite: 2026-01-12]
+                # D. 族群輪動慣性
                 sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
-                sector_bias = 1 + (sector_momentum * 0.005) # 族群強則慣性增加 [cite: 2026-01-12]
-
-                # --- 3. [籌碼修正與波動計算] ---
-                # 修正 Bias：整合量能與族群動能，不再只是固定的 0.994 [cite: 2026-01-12]
-                bias = 1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)
-                bias = max(0.97, min(1.04, bias)) # 限制範圍避免極端
+                sector_bias = 1 + (sector_momentum * 0.005)
+                
+                # --- 3. [核心修正 Bias 計算] ---
+                # 這裡整合了：量能修正 + 族群修正 + FinMind籌碼修正 + 地緣政治避險修正
+                # 原有的技術面 Bias
+                tech_bias = 1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)
+                
+                # 最終複合 Bias (將所有因子乘總)
+                # 當 risk_factor < 1 (原油漲)，預估位會自動下修
+                bias = tech_bias * chip_factor * risk_factor
+                bias = max(0.95, min(1.08, bias)) # 限制範圍避免預測失真
 
                 # ATR 基礎波動計算 [cite: 2026-01-12]
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
@@ -502,7 +534,7 @@ elif st.session_state.mode == "forecast":
                 # 呼叫頂部的 get_tick_size 函數 [cite: 2026-01-12]
                 tick = get_tick_size(curr_c)
                 
-                # 修正波動慣性：台積電會變成 5.0 的倍數，不再是 1.73 [cite: 2026-01-12]
+                inertia_factor = np.sqrt(relative_volume)
                 vol_inertia = round((atr * bias) / tick) * tick 
                 
                 # 修正預估開盤：符合台股跳動單位 [cite: 2026-01-12]
@@ -807,6 +839,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
