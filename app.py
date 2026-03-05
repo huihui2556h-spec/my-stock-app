@@ -576,26 +576,24 @@ elif st.session_state.mode == "forecast":
                 # --- 2. [族群動能與相對量能計算] ---
                 # A. 獲取地緣政治/避險風險因子 (呼叫你在最上方定義的函數)
                 risk_factor = get_global_risk_impact() 
-                
-                # B. 獲取 FinMind 籌碼因子 (呼叫你在最上方定義的函數)
-                chip_factor = fetch_finmind_chips(stock_id) 
 
-                # C. 相對成交量 (用於計算波動慣性)
+# B. 獲取 FinMind 籌碼因子 (⚠️ 這裡改用 5 個變數接收)
+                c_score, net_lots, f_net, t_net, d_net = fetch_finmind_chips(stock_id) 
+
+# C. 相對成交量
                 relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
-                
-                # D. 族群輪動慣性
+
+# D. 族群輪動慣性
                 sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
                 sector_bias = 1 + (sector_momentum * 0.005)
-                
-                # --- 3. [核心修正 Bias 計算] ---
-                # 這裡整合了：量能修正 + 族群修正 + FinMind籌碼修正 + 地緣政治避險修正
-                # 原有的技術面 Bias
+
+# --- 3. [核心修正 Bias 計算] ---
+# 原有的技術面 Bias
                 tech_bias = 1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)
-                
-                # 最終複合 Bias (將所有因子乘總)
-                # 當 risk_factor < 1 (原油漲)，預估位會自動下修
-                bias = tech_bias * chip_factor * risk_factor
-                bias = max(0.95, min(1.08, bias)) # 限制範圍避免預測失真
+
+# 最終複合 Bias (⚠️ 這裡改用 c_score)
+                bias = tech_bias * c_score * risk_factor
+                bias = max(0.95, min(1.08, bias)) # 限制範圍
 
                 # ATR 基礎波動計算 [cite: 2026-01-12]
                 tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
@@ -954,6 +952,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
