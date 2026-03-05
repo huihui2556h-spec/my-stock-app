@@ -52,9 +52,9 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
             
             # 回傳更多資訊給 UI 顯示
             return chip_score, total_net_lots, f_net, t_net, d_net
-        return 1.0, 0, 0, 0, 0
-    except:
-        return 1.0, 0, 0, 0, 0
+         return 1.0, 0, 0, 0, 0
+     except:
+         return 1.0, 0, 0, 0, 0
 
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -957,6 +957,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
