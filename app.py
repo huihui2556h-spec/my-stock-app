@@ -20,8 +20,26 @@ st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_
 
 # --- [全域設定區] ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
-
-def fetch_finmind_chips(stock_id, token="你的TOKEN"):
+# --- [3. 暫時的診斷區 (測試完可以刪除)] ---
+st.warning("🧪 正在進行 8358 籌碼連線診斷...")
+try:
+    diag_params = {
+        "dataset": "InstitutionalInvestorsBuySell",
+        "data_id": "8358",
+        "start_date": (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d'),
+        "token": FINMIND_TOKEN
+    }
+    r = requests.get("https://api.finmindtrade.com/api/v4/data", params=diag_params, verify=False, timeout=10)
+    st.write(f"📡 API 狀態碼: {r.status_code}") # 這裡如果是 200 代表連線成功
+    if r.json().get('data'):
+        st.success("✅ 8358 資料抓取成功！")
+        st.dataframe(pd.DataFrame(r.json()['data']).tail(3)) # 顯示最後三筆資料
+    else:
+        st.error("❌ API 回傳成功但裡面沒資料")
+except Exception as e:
+    st.error(f"💥 診斷發現錯誤: {e}")
+    
+def fetch_finmind_chips(stock_id, token="FINMIND_TOKEN"):
     # 預設 6 個回傳值 (分數, 合計, 外資, 投信, 自營, 日期)
     res = (1.0, 0.0, 0.0, 0.0, 0.0, "無有效資料")
     # 建立強韌連線 Session (防止連線異常)
@@ -990,6 +1008,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
