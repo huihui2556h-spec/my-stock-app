@@ -831,25 +831,25 @@ elif st.session_state.mode == "forecast":
 
 
                # --- 在你的 Streamlit UI 區塊 ---
-               with st.spinner('🏦 正在同步法人籌碼'):
+                with st.spinner('🏦 正在同步法人籌碼'):
     # ✅ 接收 6 個變數
-                   c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
+                    c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
 
 # 判斷是否為今天
-               is_today = chip_date == datetime.now().strftime('%Y-%m-%d')
-               date_display = f"🔴 {chip_date} (最新)" if is_today else f"⚪ {chip_date} (前一交易日)"
+                is_today = chip_date == datetime.now().strftime('%Y-%m-%d')
+                date_display = f"🔴 {chip_date} (最新)" if is_today else f"⚪ {chip_date} (前一交易日)"
 
-               st.subheader(f"📊 {stock_id} 三大法人籌碼監控")
-               st.caption(f"📅 資料日期：{date_display}")
+                st.subheader(f"📊 {stock_id} 三大法人籌碼監控")
+                st.caption(f"📅 資料日期：{date_display}")
 
 # 顯示 Metrics
-               c1, c2, c3, c4 = st.columns(4)
-               def c_color(v): return "normal" if v >= 0 else "inverse"
+                c1, c2, c3, c4 = st.columns(4)
+                def c_color(v): return "normal" if v >= 0 else "inverse"
 
-               c1.metric("外資", f"{f_net:,.0f} 張", delta=f"{f_net:,.0f}", delta_color=c_color(f_net))
-               c2.metric("投信", f"{t_net:,.0f} 張", delta=f"{t_net:,.0f}", delta_color=c_color(t_net))
-               c3.metric("自營商", f"{d_net:,.0f} 張", delta=f"{d_net:,.0f}", delta_color=c_color(d_net))
-               c4.metric("合計", f"{net_lots:,.0f} 張", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))ts))
+                c1.metric("外資", f"{f_net:,.0f} 張", delta=f"{f_net:,.0f}", delta_color=c_color(f_net))
+                c2.metric("投信", f"{t_net:,.0f} 張", delta=f"{t_net:,.0f}", delta_color=c_color(t_net))
+                c3.metric("自營商", f"{d_net:,.0f} 張", delta=f"{d_net:,.0f}", delta_color=c_color(d_net))
+                c4.metric("合計", f"{net_lots:,.0f} 張", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))ts))
 
 # 3. 慣性診斷
                 st.info("🧬 **AI 波動慣性診斷**")
@@ -963,6 +963,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
