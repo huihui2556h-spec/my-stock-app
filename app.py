@@ -48,7 +48,7 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
             t_net = (today_chips[today_chips['name'] == 'Investment_Trust']['buy'].sum() - today_chips[today_chips['name'] == 'Investment_Trust']['sell'].sum()) / 1000
             d_net = (today_chips[today_chips['name'] == 'Dealer_Self']['buy'].sum() - today_chips[today_chips['name'] == 'Dealer_Self']['sell'].sum()) / 1000
             
-           total_net_lots = f_net + t_net + d_net
+            total_net_lots = f_net + t_net + d_net
             chip_score = max(0.97, min(1.05, 1 + (total_net_lots / 2000) * 0.015))
             
             return (float(chip_score), float(total_net_lots), float(f_net), float(t_net), float(d_net))
@@ -958,6 +958,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
