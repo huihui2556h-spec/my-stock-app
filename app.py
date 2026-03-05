@@ -856,8 +856,9 @@ elif st.session_state.mode == "forecast":
                     c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
 
 # 判斷是否為今天
-                is_today = chip_date == datetime.now().strftime('%Y-%m-%d')
-                date_display = f"🔴 {chip_date} (最新)" if is_today else f"⚪ {chip_date} (前一交易日)"
+                current_date = datetime.now().strftime('%Y-%m-%d')
+                is_today = str(chip_date) == current_date
+                date_display = f"🔴 {chip_date} (最新)" if is_today else f"⚪ {chip_date}"
 
                 st.subheader(f"📊 {stock_id} 三大法人籌碼監控")
                 st.caption(f"📅 資料日期：{date_display}")
@@ -873,12 +874,14 @@ elif st.session_state.mode == "forecast":
 
 # 3. 慣性診斷
                 st.info("🧬 **AI 波動慣性診斷**")
-                if t_net > 500:
-                    chip_insight = f"🔥 **投信於 {chip_date} 強勢鎖碼**，向上慣性極強。"
-                elif f_net < -2000:
-                    chip_insight = f"⚠️ **外資於 {chip_date} 大幅提款**，短期慣性偏弱。"
+                if t_net > 300: # 投信通常是波段指標
+                    chip_insight = f"🔥 **投信於 {chip_date} 積極鎖碼**，對股價具備強力支撐慣性。"
+                elif f_net < -1500: # 外資大賣通常有壓
+                    chip_insight = f"⚠️ **外資於 {chip_date} 顯著調節**，短期慣性恐受壓抑。"
+                elif net_lots > 1000: # 三大法人合力買超
+                    chip_insight = f"🚀 **法人合力偏多**，{chip_date} 籌碼呈現集結狀態。"
                 else:
-                    chip_insight = "⚖️ **籌碼動能中性**，回歸技術面震盪。"
+                    chip_insight = "⚖️ **籌碼動能中性**，目前法人並無明顯單向慣性。"
                 st.write(chip_insight)
 
                 st.markdown("---")
@@ -983,6 +986,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
