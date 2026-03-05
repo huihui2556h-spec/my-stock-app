@@ -72,11 +72,7 @@ def get_global_risk_impact():
     except:
         return 1.0
 
-# --- [既存的 FinMind 籌碼函數 - 根據 2026-01-12 指示] ---
-def fetch_finmind_chips(stock_id):
-    # 這裡實作您 FinMind API 的調用邏輯
-    # 假設回傳一個 chip_score (1.0 為中性)
-    return 1.05 # 範例數值
+
 
 # --- 1. [定義台股升降單位函數] ---
 def get_tick_size(price):
@@ -958,6 +954,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
