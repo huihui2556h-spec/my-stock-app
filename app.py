@@ -849,7 +849,7 @@ elif st.session_state.mode == "forecast":
                 c1.metric("外資", f"{f_net:,.0f} 張", delta=f"{f_net:,.0f}", delta_color=c_color(f_net))
                 c2.metric("投信", f"{t_net:,.0f} 張", delta=f"{t_net:,.0f}", delta_color=c_color(t_net))
                 c3.metric("自營商", f"{d_net:,.0f} 張", delta=f"{d_net:,.0f}", delta_color=c_color(d_net))
-                c4.metric("合計", f"{net_lots:,.0f} 張", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))ts))
+                c4.metric("合計", f"{net_lots:,.0f} 張", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))
 
 # 3. 慣性診斷
                 st.info("🧬 **AI 波動慣性診斷**")
@@ -963,6 +963,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
