@@ -24,6 +24,11 @@ FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNS
 def fetch_finmind_chips(stock_id, token="你的TOKEN"):
     # 預設 6 個回傳值 (分數, 合計, 外資, 投信, 自營, 日期)
     res = (1.0, 0.0, 0.0, 0.0, 0.0, "無有效資料")
+    # 建立強韌連線 Session (防止連線異常)
+    session = requests.Session()
+    retry = Retry(connect=3, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('https://', adapter)
     try:
         pure_id = stock_id.split('.')[0]
         url = "https://api.finmindtrade.com/api/v4/data"
@@ -985,6 +990,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
