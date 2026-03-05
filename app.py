@@ -20,93 +20,68 @@ st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_
 
 # --- [全域設定區] ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
-# --- [3. 暫時的診斷區 (測試完可以刪除)] ---
-st.warning("🧪 正在進行 8358 籌碼連線診斷...")
-try:
-    diag_params = {
-        "dataset": "InstitutionalInvestorsBuySell",
-        "data_id": "8358",
-        "start_date": (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d'),
-        "token": FINMIND_TOKEN
-    }
-    r = requests.get("https://api.finmindtrade.com/api/v4/data", params=diag_params, verify=False, timeout=10)
-    st.write(f"📡 API 狀態碼: {r.status_code}") # 這裡如果是 200 代表連線成功
-    if r.json().get('data'):
-        st.success("✅ 8358 資料抓取成功！")
-        st.dataframe(pd.DataFrame(r.json()['data']).tail(3)) # 顯示最後三筆資料
-    else:
-        st.error("❌ API 回傳成功但裡面沒資料")
-except Exception as e:
-    st.error(f"💥 診斷發現錯誤: {e}")
+
+def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
+    # 內部強制導入，確保不受外部 import 影響
+    import requests
+    import datetime as dt
+    import pandas as pd
+    from urllib3.util.retry import Retry
+    from requests.adapters import HTTPAdapter
     
-def fetch_finmind_chips(stock_id, token="FINMIND_TOKEN"):
-    # 預設 6 個回傳值 (分數, 合計, 外資, 投信, 自營, 日期)
-    res = (1.0, 0.0, 0.0, 0.0, 0.0, "無有效資料")
-    # 建立強韌連線 Session (防止連線異常)
-    session = requests.Session()
-    retry = Retry(connect=3, backoff_factor=0.5)
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('https://', adapter)
+    res = (1.0, 0.0, 0.0, 0.0, 0.0, "初始化中")
     try:
-        pure_id = stock_id.split('.')[0]
-        url = "https://api.finmindtrade.com/api/v4/data"
+        # 🟢 暴力解決 timedelta 問題：直接在內部呼叫
+        now = dt.datetime.now()
+        back_date = now - dt.timedelta(days=30)
+        start_date_str = back_date.strftime('%Y-%m-%d')
         
-        # 🟢 搜尋範圍拉長到 45 天，確保能跨過所有 API 延遲
-        start_date = (datetime.now() - timedelta(days=45)).strftime('%Y-%m-%d')
+        pure_id = str(stock_id).split('.')[0]
+        url = "https://api.finmindtrade.com/api/v4/data"
         
         params = {
             "dataset": "InstitutionalInvestorsBuySell",
             "data_id": pure_id,
-            "start_date": start_date,
-            "token": token,
+            "start_date": start_date_str,
+            "token": token
         }
         
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        # 加上 verify=False 解決 SSL 問題
-        resp = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
+        # 建立 Session 並忽略 SSL
+        s = requests.Session()
+        s.mount('https://', HTTPAdapter(max_retries=Retry(total=3)))
+        
+        # 關鍵：加上 verify=False
+        resp = s.get(url, params=params, timeout=15, verify=False)
         
         if resp.status_code == 200:
-            data = resp.json()
-            # 🟢 檢查 1：是否有 data 欄位且不為空
-            if not data.get('data'):
-                return (1.0, 0.0, 0.0, 0.0, 0.0, "API未提供此股資料")
+            raw_data = resp.json()
+            if raw_data.get('data'):
+                df = pd.DataFrame(raw_data['data'])
+                # 過濾 0 數據並取最後一天
+                df = df[(df['buy'] != 0) | (df['sell'] != 0)]
+                if df.empty: return (1.0, 0.0, 0.0, 0.0, 0.0, "查無有效籌碼")
                 
-            df = pd.DataFrame(data['data'])
-            
-            # 🟢 檢查 2：過濾掉買賣超皆為 0 的空殼日期 (關鍵！)
-            # 這會解決 8358 今天 (3/5) 資料還沒進場卻回傳 0 的問題
-            df = df[(df['buy'] != 0) | (df['sell'] != 0)]
-            
-            if df.empty:
-                return (1.0, 0.0, 0.0, 0.0, 0.0, "近期查無買賣紀錄")
+                last_dt = df['date'].max()
+                t_df = df[df['date'] == last_dt]
+                
+                # 自動判斷欄位名稱
+                c = 'name' if 'name' in t_df.columns else ('type' if 'type' in t_df.columns else None)
+                
+                def get_net(k):
+                    row = t_df[t_df[c].str.contains(k, case=False, na=False)]
+                    return (row['buy'].sum() - row['sell'].sum()) / 1000 if not row.empty else 0.0
 
-            # 🟢 檢查 3：安全地抓取最新日期
-            latest_date = df['date'].max()
-            today_df = df[df['date'] == latest_date]
-            
-            # 🟢 檢查 4：自動識別欄位 (name 或 type)
-            col = 'name' if 'name' in df.columns else ('type' if 'type' in df.columns else None)
-            if not col:
-                return (1.0, 0.0, 0.0, 0.0, 0.0, "欄位結構異常")
-
-            # 計算數值
-            def get_val(name_key):
-                rows = today_df[today_df[col].str.contains(name_key, case=False, na=False)]
-                return (rows['buy'].sum() - rows['sell'].sum()) / 1000 if not rows.empty else 0.0
-
-            f = get_val('Foreign_Investor')
-            t = get_val('Investment_Trust')
-            d = get_val('Dealer_Self')
-            total = f + t + d
-            
-            score = max(0.97, min(1.05, 1 + (total / 2000) * 0.015))
-            return (float(score), float(total), float(f), float(t), float(d), str(latest_date))
+                f, t, d = get_net('Foreign'), get_net('Trust'), get_net('Dealer')
+                total = f + t + d
+                score = max(0.97, min(1.03, 1 + (total / 2000) * 0.012))
+                
+                return (float(score), float(total), float(f), float(t), float(d), str(last_dt))
         
         return (1.0, 0.0, 0.0, 0.0, 0.0, f"HTTP:{resp.status_code}")
         
     except Exception as e:
-        # 🟢 如果還是異常，顯示前 15 個字幫助診斷
-        return (1.0, 0.0, 0.0, 0.0, 0.0, f"異常:{str(e)[:15]}")
+        # 這裡會精確顯示到底是哪個變數出錯
+        return (1.0, 0.0, 0.0, 0.0, 0.0, f"偵錯:{str(e)[:15]}")
         
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -1008,6 +983,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
