@@ -569,7 +569,8 @@ elif st.session_state.mode == "forecast":
                 risk_factor = get_global_risk_impact() 
 
 # B. 獲取 FinMind 籌碼因子 (⚠️ 這裡改用 5 個變數接收)
-                c_score, net_lots, f_net, t_net, d_net = fetch_finmind_chips(stock_id) 
+            # 加上 chip_date 接收第六個回傳值
+                c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
 
 # C. 相對成交量
                 relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
@@ -952,6 +953,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
