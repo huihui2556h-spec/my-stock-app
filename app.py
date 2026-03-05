@@ -23,50 +23,64 @@ FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNS
 
 def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
     import requests
-    import datetime as dt
     import pandas as pd
-    import yfinance as yf
+    from datetime import datetime, timedelta
 
-    # 預設值
-    res = (1.0, 0.0, 0.0, 0.0, 0.0, " yfinance 模擬")
+    # 預設回傳
+    default_res = (1.0, 0.0, 0.0, 0.0, 0.0, "API 維護中")
+    pure_id = str(stock_id).split('.')[0]
     
-    # --- 第一層：嘗試抓 FinMind ---
-    try:
-        pure_id = str(stock_id).split('.')[0]
-        start_date = (dt.datetime.now() - dt.timedelta(days=30)).strftime('%Y-%m-%d')
-        url = "https://api.finmindtrade.com/api/v4/data"
-        params = {"dataset": "InstitutionalInvestorsBuySell", "data_id": pure_id, "start_date": start_date, "token": token}
-        
-        resp = requests.get(url, params=params, timeout=5, verify=False)
-        if resp.status_code == 200 and resp.json().get('data'):
-            df = pd.DataFrame(resp.json()['data'])
-            df = df[(df['buy'] != 0) | (df['sell'] != 0)]
-            if not df.empty:
-                last_date = df['date'].max()
-                today_df = df[df['date'] == last_date]
-                # ... (此處保留之前的三大法人計算邏輯) ...
-                # 如果成功抓到，直接 return 
-                # return (score, total, f, t, d, last_date)
-    except:
-        pass # 如果失敗，進入第二層
-
-    # --- 第二層：救援機制 (yfinance 成交量慣性) ---
-    try:
-        ticker = yf.Ticker(stock_id if "." in stock_id else f"{stock_id}.TW")
-        hist = ticker.history(period="5d")
-        if len(hist) >= 2:
-            vol_ratio = hist['Volume'].iloc[-1] / hist['Volume'].mean()
-            price_change = (hist['Close'].iloc[-1] / hist['Close'].iloc[-2]) - 1
+    # 嘗試兩種 ID 格式 (上櫃股票有時需要不同後綴)
+    id_variants = [pure_id, f"{pure_id}.TW"]
+    
+    for target_id in id_variants:
+        try:
+            url = "https://api.finmindtrade.com/api/v4/data"
+            start_dt = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+            params = {
+                "dataset": "InstitutionalInvestorsBuySell",
+                "data_id": target_id,
+                "start_date": start_dt,
+                "token": token
+            }
             
-            # 模擬籌碼分數：量增價漲 = 法人進場慣性
-            sim_score = 1.0 + (vol_ratio * 0.01) if price_change > 0 else 1.0 - (vol_ratio * 0.005)
-            sim_net = (hist['Volume'].iloc[-1] / 1000) * (0.1 if price_change > 0 else -0.1) # 模擬買超張數
-            
-            return (float(sim_score), float(sim_net), 0.0, 0.0, 0.0, f"{hist.index[-1].strftime('%m/%d')} (量能模擬)")
-    except:
-        return (1.0, 0.0, 0.0, 0.0, 0.0, "暫無數據")
+            resp = requests.get(url, params=params, timeout=10, verify=False)
+            if resp.status_code == 200:
+                data = resp.json().get('data', [])
+                if data:
+                    df = pd.DataFrame(data)
+                    # 🟢 關鍵：過濾掉所有買賣皆為 0 的無效紀錄
+                    df = df[(df['buy'] != 0) | (df['sell'] != 0)]
+                    
+                    if not df.empty:
+                        last_date = df['date'].max()
+                        today_df = df[df['date'] == last_date]
+                        
+                        col = 'name' if 'name' in df.columns else 'type'
+                        def get_v(k):
+                            r = today_df[today_df[col].str.contains(k, case=False, na=False)]
+                            return (r['buy'].sum() - r['sell'].sum()) / 1000 if not r.empty else 0.0
 
-    return res
+                        f, t, d = get_v('Foreign'), get_v('Trust'), get_v('Dealer')
+                        total = f + t + d
+                        score = max(0.97, min(1.03, 1 + (total / 2000) * 0.012))
+                        return (float(score), float(total), float(f), float(t), float(d), str(last_date))
+        except:
+            continue
+
+    # --- 🕯️ 蠟燭兩頭燒：如果 FinMind 徹底失敗，啟動 yfinance 備援 ---
+    try:
+        import yfinance as yf
+        ytick = yf.Ticker(f"{pure_id}.TWO" if int(pure_id) > 1000 else f"{pure_id}.TW")
+        h = ytick.history(period="5d")
+        if not h.empty:
+            vol_status = h['Volume'].iloc[-1] / h['Volume'].mean()
+            # 模擬一個具有參考價值的籌碼分 (基於量能慣性)
+            return (1.01 if vol_status > 1 else 1.0, 0.0, 0.0, 0.0, 0.0, f"{h.index[-1].strftime('%m/%d')} (量能估算)")
+    except:
+        pass
+
+    return default_res
         
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -971,6 +985,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
