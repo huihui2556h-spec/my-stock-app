@@ -6,5 +6,6 @@ matplotlib
 scikit-learn
 pytz
 requests
+urllib3
 FinMind
 tqdm
