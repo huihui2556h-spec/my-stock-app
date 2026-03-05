@@ -18,33 +18,48 @@ st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
 
 def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
-    # 預設回傳值：分數, 合計, 外資, 投信, 自營, 日期
-    res = (1.0, 0, 0, 0, 0, "無資料")
+    # 預設值 (確保回傳 6 個，包含日期)
+    res = (1.0, 0.0, 0.0, 0.0, 0.0, "資料同步中")
     try:
         pure_id = stock_id.split('.')[0]
         url = "https://api.finmindtrade.com/api/v4/data"
-        # 抓取 14 天確保跨假日也有資料
+        
+        # 搜尋最近 14 天，確保一定能抓到前一交易日
         start_date = (datetime.now() - timedelta(days=14)).strftime('%Y-%m-%d')
         
-        parameter = {"dataset": "InstitutionalInvestorsBuySell", "data_id": pure_id, "start_date": start_date, "token": token}
-        resp = requests.get(url, params=parameter)
+        parameter = {
+            "dataset": "InstitutionalInvestorsBuySell",
+            "data_id": pure_id,
+            "start_date": start_date,
+            "token": token,
+        }
+        
+        resp = requests.get(url, params=parameter, timeout=10)
         data = resp.json()
         
         if data.get('status') == 200 and data.get('data'):
             df_chips = pd.DataFrame(data['data'])
-            # ✅ 關鍵：抓取資料中最新的一天
-            latest_date = df_chips['date'].max()
-            today_chips = df_chips[df_chips['date'] == latest_date]
             
-            f_net = (today_chips[today_chips['name'] == 'Foreign_Investor']['buy'].sum() - today_chips[today_chips['name'] == 'Foreign_Investor']['sell'].sum()) / 1000
-            t_net = (today_chips[today_chips['name'] == 'Investment_Trust']['buy'].sum() - today_chips[today_chips['name'] == 'Investment_Trust']['sell'].sum()) / 1000
-            d_net = (today_chips[today_chips['name'] == 'Dealer_Self']['buy'].sum() - today_chips[today_chips['name'] == 'Dealer_Self']['sell'].sum()) / 1000
+            # ✅ 自動鎖定「最新有資料的日期」(例如 3/4)
+            latest_date = df_chips['date'].max()
+            today_data = df_chips[df_chips['date'] == latest_date]
+            
+            # 計算三大法人 (單位: 張)
+            def get_net(name):
+                target = today_data[today_data['name'] == name]
+                return (target['buy'].sum() - target['sell'].sum()) / 1000 if not target.empty else 0.0
+
+            f_net = get_net('Foreign_Investor')
+            t_net = get_net('Investment_Trust')
+            d_net = get_net('Dealer_Self')
             total_net_lots = f_net + t_net + d_net
+            
+            # 計算 AI 慣性分數
             chip_score = max(0.97, min(1.05, 1 + (total_net_lots / 2000) * 0.015))
             
-            # ✅ 回傳 6 個值
             return (float(chip_score), float(total_net_lots), float(f_net), float(t_net), float(d_net), latest_date)
-        return res
+            
+        return (1.0, 0.0, 0.0, 0.0, 0.0, "API未回傳")
     except:
         return res
         
@@ -815,31 +830,26 @@ elif st.session_state.mode == "forecast":
                     ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
 
 
-                # ==========================================
-# 🏦 [核心]：三大法人籌碼與 AI 慣性計算區
-# ==========================================
-# 1. 向 FinMind 抓取數據
-                with st.spinner('🏦 正在同步法人籌碼'):
-    # ✅ 接收 6 個值 (多了 chip_date)
-                  chip_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
-  
+               # --- 在你的 Streamlit UI 區塊 ---
+               with st.spinner('🏦 正在同步法人籌碼'):
+    # ✅ 接收 6 個變數
+                   c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
 
-# 🔍 檢查是否為當天數據的提醒
-                current_date = datetime.now().strftime('%Y-%m-%d')
-                if chip_date == current_date:
-                    st.caption("✅ 目前顯示為今日最新數據")
-                else:
-                    st.caption(f"⏳ 今日數據尚未更新，目前顯示 {chip_date} 結算結果")
+# 判斷是否為今天
+               is_today = chip_date == datetime.now().strftime('%Y-%m-%d')
+               date_display = f"🔴 {chip_date} (最新)" if is_today else f"⚪ {chip_date} (前一交易日)"
 
-                c1, c2, c3, c4 = st.columns(4)
+               st.subheader(f"📊 {stock_id} 三大法人籌碼監控")
+               st.caption(f"📅 資料日期：{date_display}")
 
-# 定義顯示顏色
-                def c_color(v): return "normal" if v >= 0 else "inverse"
+# 顯示 Metrics
+               c1, c2, c3, c4 = st.columns(4)
+               def c_color(v): return "normal" if v >= 0 else "inverse"
 
-                c1.metric("外資 (張)", f"{f_net:,.0f}", delta=f"{f_net:,.0f}", delta_color=c_color(f_net))
-                c2.metric("投信 (張)", f"{t_net:,.0f}", delta=f"{t_net:,.0f}", delta_color=c_color(t_net))
-                c3.metric("自營商", f"{d_net:,.0f}", delta=f"{d_net:,.0f}", delta_color=c_color(d_net))
-                c4.metric("合計買賣", f"{net_lots:,.0f}", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))
+               c1.metric("外資", f"{f_net:,.0f} 張", delta=f"{f_net:,.0f}", delta_color=c_color(f_net))
+               c2.metric("投信", f"{t_net:,.0f} 張", delta=f"{t_net:,.0f}", delta_color=c_color(t_net))
+               c3.metric("自營商", f"{d_net:,.0f} 張", delta=f"{d_net:,.0f}", delta_color=c_color(d_net))
+               c4.metric("合計", f"{net_lots:,.0f} 張", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))ts))
 
 # 3. 慣性診斷
                 st.info("🧬 **AI 波動慣性診斷**")
@@ -953,6 +963,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
