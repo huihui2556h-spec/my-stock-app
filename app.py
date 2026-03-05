@@ -11,61 +11,67 @@ import matplotlib
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
 
 # --- [全域設定區] ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
 
-def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
-    # 1. 預設回傳 (6個值)
-    res = (1.0, 0.0, 0.0, 0.0, 0.0, "資料擷取中")
+def fetch_finmind_chips(stock_id, token="你的TOKEN"):
+    # 預設 6 個回傳值：分數, 合計, 外資, 投信, 自營, 日期
+    res = (1.0, 0.0, 0.0, 0.0, 0.0, "等待同步")
     
+    # 建立具備自動重試功能的 Session
+    session = requests.Session()
+    retry = Retry(connect=3, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('https://', adapter)
+
     try:
+        # 確保代碼格式正確 (8358.TW -> 8358)
         pure_id = stock_id.split('.')[0]
         url = "https://api.finmindtrade.com/api/v4/data"
         
-        # 🟢 修正：時間拉長到 30 天，確保一定有歷史資料可以回溯
+        # 搜尋範圍拉長至 30 天，確保一定能抓到前一交易日
         start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
         
-        parameter = {
+        params = {
             "dataset": "InstitutionalInvestorsBuySell",
             "data_id": pure_id,
             "start_date": start_date,
             "token": token,
         }
         
-        resp = requests.get(url, params=parameter, timeout=15)
-        data = resp.json()
+        # 偽裝標頭 + 關閉 SSL 驗證 (解決連線異常的關鍵)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = session.get(url, params=params, headers=headers, timeout=15, verify=False)
         
-        if data.get('status') == 200 and data.get('data'):
-            df_chips = pd.DataFrame(data['data'])
-            
-            # 🟢 核心修正：移除可能導致計算錯誤的空行，並抓取最新的日期
-            df_chips = df_chips.dropna(subset=['buy', 'sell'])
-            if df_chips.empty:
-                return (1.0, 0.0, 0.0, 0.0, 0.0, "查無法人紀錄")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('data'):
+                df = pd.DataFrame(data['data'])
+                # 抓取該股票有資料的「最後一天」
+                latest_date = df['date'].max()
+                today_df = df[df['date'] == latest_date]
+                
+                # 計算三大法人 (單位：張)
+                def get_val(n):
+                    d = today_df[today_df['name']==n]
+                    return (d['buy'].sum() - d['sell'].sum()) / 1000 if not d.empty else 0.0
 
-            latest_date = df_chips['date'].max() # 抓取 8358 歷史資料中的最後一天
-            today_data = df_chips[df_chips['date'] == latest_date]
-            
-            # 2. 計算法人買賣超 (單位：張)
-            f_net = (today_data[today_data['name'] == 'Foreign_Investor']['buy'].sum() - today_data[today_data['name'] == 'Foreign_Investor']['sell'].sum()) / 1000
-            t_net = (today_data[today_data['name'] == 'Investment_Trust']['buy'].sum() - today_data[today_data['name'] == 'Investment_Trust']['sell'].sum()) / 1000
-            d_net = (today_data[today_data['name'] == 'Dealer_Self']['buy'].sum() - today_data[today_data['name'] == 'Dealer_Self']['sell'].sum()) / 1000
-            
-            total_net_lots = f_net + t_net + d_net
-            
-            # 3. 慣性分數計算
-            chip_score = 1 + (total_net_lots / 2000) * 0.015
-            chip_score = max(0.97, min(1.05, chip_score))
-            
-            return (float(chip_score), float(total_net_lots), float(f_net), float(t_net), float(d_net), str(latest_date))
+                f, t, d = get_val('Foreign_Investor'), get_val('Investment_Trust'), get_val('Dealer_Self')
+                total = f + t + d
+                # AI 分數修正
+                score = max(0.97, min(1.05, 1 + (total / 2000) * 0.015))
+                
+                return (float(score), float(total), float(f), float(t), float(d), str(latest_date))
         
-        return (1.0, 0.0, 0.0, 0.0, 0.0, "API未更新")
-        
+        return (1.0, 0.0, 0.0, 0.0, 0.0, "API未回傳")
     except Exception as e:
-        return (1.0, 0.0, 0.0, 0.0, 0.0, f"連線異常")
+        return (1.0, 0.0, 0.0, 0.0, 0.0, f"連線異常:{str(e)[:5]}")
         
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -967,6 +973,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
