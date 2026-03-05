@@ -14,6 +14,48 @@ from sklearn.metrics import r2_score, mean_absolute_error
 
 st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
 
+# --- [全域設定區] ---
+FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
+
+def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
+    try:
+        pure_id = stock_id.split('.')[0]
+        url = "https://api.finmindtrade.com/api/v4/data"
+        
+        # 修改點 1: 確保日期區間足夠覆蓋休假日
+        start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        parameter = {
+            "dataset": "InstitutionalInvestorsBuySell",
+            "data_id": pure_id,
+            "start_date": start_date,
+            "token": token,
+        }
+        resp = requests.get(url, params=parameter)
+        data = resp.json()
+        
+        if data['status'] == 200 and len(data['data']) > 0:
+            df_chips = pd.DataFrame(data['data'])
+            latest_day = df_chips['date'].max()
+            today_chips = df_chips[df_chips['date'] == latest_day]
+            
+            # 修改點 2: 分類計算，這能讓 AI 知道是誰在拉抬
+            # 單位換算為「張」 (FinMind 給的是股)
+            f_net = (today_chips[today_chips['name'] == 'Foreign_Investor']['buy'].sum() - today_chips[today_chips['name'] == 'Foreign_Investor']['sell'].sum()) / 1000
+            t_net = (today_chips[today_chips['name'] == 'Investment_Trust']['buy'].sum() - today_chips[today_chips['name'] == 'Investment_Trust']['sell'].sum()) / 1000
+            d_net = (today_chips[today_chips['name'] == 'Dealer_Self']['buy'].sum() - today_chips[today_chips['name'] == 'Dealer_Self']['sell'].sum()) / 1000
+            
+            total_net_lots = f_net + t_net + d_net
+            
+            # 修改點 3: 強化權重感應力 (讓 1000 張的變動就有感)
+            chip_score = 1 + (total_net_lots / 2000) * 0.015 
+            chip_score = max(0.97, min(1.05, chip_score))
+            
+            # 回傳更多資訊給 UI 顯示
+            return chip_score, total_net_lots, f_net, t_net, d_net
+        return 1.0, 0, 0, 0, 0
+    except:
+        return 1.0, 0, 0, 0, 0
+
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
     try:
@@ -785,6 +827,9 @@ elif st.session_state.mode == "forecast":
                     ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
                     ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
 
+
+                
+
                 # --- [4. AI 統整投資建議] ---
                 st.subheader("🎯 AI 全維度投資決策")
                 if relative_volume > 1.2 and sector_momentum > 0 and f_score > 1.0:
@@ -880,6 +925,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
