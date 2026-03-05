@@ -21,6 +21,7 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
     """
     抓取三大法人買賣超數據，並計算籌碼力道分數
     """
+    res = (1.0, 0, 0, 0, 0)
     try:
         # 1. 整理代碼格式
         pure_id = stock_id.split('.')[0]
@@ -47,20 +48,14 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
             t_net = (today_chips[today_chips['name'] == 'Investment_Trust']['buy'].sum() - today_chips[today_chips['name'] == 'Investment_Trust']['sell'].sum()) / 1000
             d_net = (today_chips[today_chips['name'] == 'Dealer_Self']['buy'].sum() - today_chips[today_chips['name'] == 'Dealer_Self']['sell'].sum()) / 1000
             
-            total_net_lots = f_net + t_net + d_net
+           total_net_lots = f_net + t_net + d_net
+            chip_score = max(0.97, min(1.05, 1 + (total_net_lots / 2000) * 0.015))
             
-            # 計算權重分數
-            chip_score = 1 + (total_net_lots / 2000) * 0.015 
-            chip_score = max(0.97, min(1.05, chip_score))
+            return (float(chip_score), float(total_net_lots), float(f_net), float(t_net), float(d_net))
             
-            return chip_score, total_net_lots, f_net, t_net, d_net
-            
-        # 如果 status 不是 200 或沒資料，對齊 if
-        return 1.0, 0, 0, 0, 0
-
-    except Exception as e:
-        # 發生任何錯誤時，對齊 try
-        return 1.0, 0, 0, 0, 0
+        return res
+    except:
+        return res
         
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -963,6 +958,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
