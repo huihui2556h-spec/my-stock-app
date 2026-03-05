@@ -827,6 +827,38 @@ elif st.session_state.mode == "forecast":
                     ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
                     ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
 
+                
+                # ==========================================
+                # 🏦 [核心]：三大法人籌碼與 AI 慣性計算區
+                # ==========================================
+                # 1. 向 FinMind 抓取數據
+                with st.spinner('🏦 正在同步法人籌碼'):
+                    chip_score, net_lots, f_net, t_net, d_net = fetch_finmind_chips(stock_id)
+
+                # 2. 顯示籌碼即時看板 (Metrics)
+                st.subheader(f"📊 {stock_id} 三大法人籌碼即時監控")
+                c1, c2, c3, c4 = st.columns(4)
+                
+                # 定義顯示顏色：買超(紅/正常), 賣超(綠/反轉)
+                def c_color(v): return "normal" if v >= 0 else "inverse"
+
+                c1.metric("外資 (張)", f"{f_net:,.0f}", delta=f"{f_net:,.0f}", delta_color=c_color(f_net))
+                c2.metric("投信 (張)", f"{t_net:,.0f}", delta=f"{t_net:,.0f}", delta_color=c_color(t_net))
+                c3.metric("自營商", f"{d_net:,.0f}", delta=f"{d_net:,.0f}", delta_color=c_color(d_net))
+                c4.metric("合計買賣", f"{net_lots:,.0f}", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))
+
+                # 3. 慣性診斷 (這段會影響下方的投資建議)
+                st.info("🧬 **AI 波動慣性診斷**")
+                if t_net > 500:
+                    chip_insight = "🔥 **投信強勢鎖碼**，向上慣性極強。"
+                elif f_net < -2000:
+                    chip_insight = "⚠️ **外資大幅提款**，短期慣性偏弱。"
+                else:
+                    chip_insight = "⚖️ **籌碼動能中性**，回歸技術面震盪。"
+                st.write(chip_insight)
+
+                st.markdown("---")
+
 
                 
 
@@ -925,6 +957,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
