@@ -22,13 +22,13 @@ st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
 
 def fetch_finmind_chips(stock_id, token="你的TOKEN"):
-    # 預設 6 個回傳值
-    res = (1.0, 0.0, 0.0, 0.0, 0.0, "診斷中...")
+    # 預設 6 個回傳值 (分數, 合計, 外資, 投信, 自營, 日期)
+    res = (1.0, 0.0, 0.0, 0.0, 0.0, "無有效資料")
     try:
         pure_id = stock_id.split('.')[0]
         url = "https://api.finmindtrade.com/api/v4/data"
         
-        # 🟢 關鍵 1：時間拉長到 45 天，避免空窗期
+        # 🟢 搜尋範圍拉長到 45 天，確保能跨過所有 API 延遲
         start_date = (datetime.now() - timedelta(days=45)).strftime('%Y-%m-%d')
         
         params = {
@@ -38,54 +38,52 @@ def fetch_finmind_chips(stock_id, token="你的TOKEN"):
             "token": token,
         }
         
-        # 🟢 關鍵 2：強制跳過 SSL 與偽裝標頭
         headers = {'User-Agent': 'Mozilla/5.0'}
+        # 加上 verify=False 解決 SSL 問題
         resp = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
         
         if resp.status_code == 200:
             data = resp.json()
-            if data.get('data'):
-                df = pd.DataFrame(data['data'])
+            # 🟢 檢查 1：是否有 data 欄位且不為空
+            if not data.get('data'):
+                return (1.0, 0.0, 0.0, 0.0, 0.0, "API未提供此股資料")
                 
-                # 🟢 關鍵 3：自動偵測欄位名稱 (有些 API 回傳是 'name'，有些是 'type')
-                col_name = None
-                for c in ['name', 'type', 'investor']:
-                    if c in df.columns:
-                        col_name = c
-                        break
-                
-                if not col_name:
-                    return (1.0, 0.0, 0.0, 0.0, 0.0, "API結構異常")
+            df = pd.DataFrame(data['data'])
+            
+            # 🟢 檢查 2：過濾掉買賣超皆為 0 的空殼日期 (關鍵！)
+            # 這會解決 8358 今天 (3/5) 資料還沒進場卻回傳 0 的問題
+            df = df[(df['buy'] != 0) | (df['sell'] != 0)]
+            
+            if df.empty:
+                return (1.0, 0.0, 0.0, 0.0, 0.0, "近期查無買賣紀錄")
 
-                # 🟢 關鍵 4：排除掉所有買賣皆為 0 的空數據日期
-                # 這會強迫程式抓到 3/4 或更早有開盤且有法人進出的日子
-                df = df[(df['buy'] != 0) | (df['sell'] != 0)]
-                
-                if df.empty:
-                    return (1.0, 0.0, 0.0, 0.0, 0.0, "近期無法人進出")
+            # 🟢 檢查 3：安全地抓取最新日期
+            latest_date = df['date'].max()
+            today_df = df[df['date'] == latest_date]
+            
+            # 🟢 檢查 4：自動識別欄位 (name 或 type)
+            col = 'name' if 'name' in df.columns else ('type' if 'type' in df.columns else None)
+            if not col:
+                return (1.0, 0.0, 0.0, 0.0, 0.0, "欄位結構異常")
 
-                latest_date = df['date'].max()
-                today_df = df[df['date'] == latest_date]
-                
-                # 計算三大法人 (單位：張)
-                def get_val(target_str):
-                    rows = today_df[today_df[col_name].str.contains(target_str, case=False, na=False)]
-                    return (rows['buy'].sum() - rows['sell'].sum()) / 1000 if not rows.empty else 0.0
+            # 計算數值
+            def get_val(name_key):
+                rows = today_df[today_df[col].str.contains(name_key, case=False, na=False)]
+                return (rows['buy'].sum() - rows['sell'].sum()) / 1000 if not rows.empty else 0.0
 
-                f = get_val('Foreign_Investor') # 外資
-                t = get_val('Investment_Trust') # 投信
-                d = get_val('Dealer_Self')      # 自營商
-                
-                total = f + t + d
-                score = max(0.97, min(1.05, 1 + (total / 2000) * 0.015))
-                
-                return (float(score), float(total), float(f), float(t), float(d), str(latest_date))
+            f = get_val('Foreign_Investor')
+            t = get_val('Investment_Trust')
+            d = get_val('Dealer_Self')
+            total = f + t + d
+            
+            score = max(0.97, min(1.05, 1 + (total / 2000) * 0.015))
+            return (float(score), float(total), float(f), float(t), float(d), str(latest_date))
         
-        return (1.0, 0.0, 0.0, 0.0, 0.0, "伺服器未回應")
+        return (1.0, 0.0, 0.0, 0.0, 0.0, f"HTTP:{resp.status_code}")
         
     except Exception as e:
-        # ✅ 如果還是 0，這裡會告訴你到底發生什麼事
-        return (1.0, 0.0, 0.0, 0.0, 0.0, f"異常:{str(e)[:10]}")
+        # 🟢 如果還是異常，顯示前 15 個字幫助診斷
+        return (1.0, 0.0, 0.0, 0.0, 0.0, f"異常:{str(e)[:15]}")
         
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
@@ -987,6 +985,7 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
 
 
 
