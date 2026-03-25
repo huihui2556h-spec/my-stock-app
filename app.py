@@ -1004,7 +1004,7 @@ elif st.session_state.mode == "rescue":
     with c1:
         stock_id = st.text_input("輸入股票代號")
     with c2:
-        cost_price = st.number_input("您的成本持有價", step=0.5)
+        cost_price = st.number_input("您的成本持有價", step=0.1)
     with c3:
         holding_qty = st.number_input("持有張數",  min_value=1)
 
