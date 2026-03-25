@@ -1002,11 +1002,11 @@ elif st.session_state.mode == "rescue":
     # --- 1. 輸入參數區 ---
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
-        stock_id = st.text_input("輸入股票代號", value="2408")
+        stock_id = st.text_input("輸入股票代號")
     with c2:
-        cost_price = st.number_input("您的成本持有價", value=316.0, step=0.5)
+        cost_price = st.number_input("您的成本持有價", step=0.5)
     with c3:
-        holding_qty = st.number_input("持有張數", value=1, min_value=1)
+        holding_qty = st.number_input("持有張數",  min_value=1)
 
     if stock_id:
         df, sym = fetch_stock_data(stock_id, period="120d")
