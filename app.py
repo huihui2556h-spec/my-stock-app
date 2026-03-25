@@ -237,7 +237,7 @@ def analyze_full_flow():
 
 if st.session_state.mode == "home":
     st.title("⚖️ 台股 AI 交易決策系統")
-    col_a, col_b, col_c = st.columns(3)
+    col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True):
             st.session_state.mode = "realtime"
@@ -249,6 +249,10 @@ if st.session_state.mode == "home":
     with col_c:
         if st.button("💎 類群輪動預警", use_container_width=True):
             st.session_state.mode = "sector"
+            st.rerun()
+    with col_d:
+        if st.button("🆘 拯救套牢", use_container_width=True):
+            st.session_state.mode = "rescue"
             st.rerun()
 # --- A. 💎 類群輪動預警頁面 ---
 elif st.session_state.mode == "sector":
@@ -985,6 +989,103 @@ elif st.session_state.mode == "forecast":
 
                 
                 st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
+
+# --- B. 🆘 拯救套牢 (Rescue Module) 頁面 ---
+elif st.session_state.mode == "rescue":
+    st.title("🆘 拯救套牢診斷系統")
+    
+    if st.button("⬅️ 返回首頁"):
+        st.session_state.mode = "home"
+        st.rerun()
+    st.divider()
+
+    # --- 1. 輸入參數區 ---
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        stock_id = st.text_input("輸入股票代號", value="2408")
+    with c2:
+        cost_price = st.number_input("您的成本持有價", value=316.0, step=0.5)
+    with c3:
+        holding_qty = st.number_input("持有張數", value=1, min_value=1)
+
+    if stock_id:
+        df, sym = fetch_stock_data(stock_id, period="120d")
+        if not df.empty:
+            df = df.ffill()
+            curr_p = float(df['Close'].iloc[-1])
+            name = get_stock_name(stock_id)
+            pnl_pct = (curr_p - cost_price) / cost_price * 100
+            tick = get_tick_size(curr_p)
+
+            # 抓取籌碼數據
+            c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
+
+            # --- 2. 損益現況儀表板 ---
+            st.subheader(f"📊 {name} 持股現況")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("目前股價", f"{curr_p:.2f}")
+            m2.metric("每股盈虧", f"{curr_p - cost_price:.2f}", delta=f"{pnl_pct:.2f}%", delta_color="inverse")
+            m3.metric("籌碼力道分數", f"{c_score:.3f}", help=">1.0 代表法人買超慣性強")
+
+            # --- 3. 雙方案策略區 ---
+            tab1, tab2 = st.tabs(["💰 方案一：攤平加碼建議", "⚖️ 方案二：無資金解套 (高拋低吸)"])
+
+            with tab1:
+                st.markdown("### 🎯 戰略攤平目標計算")
+                target_cost = st.slider("期望攤平後的平均成本", curr_p, cost_price, (curr_p + cost_price)/2)
+                
+                # 攤平公式：(現有張數*成本 + 新買張數*現價) / (現有+新買) = 目標成本
+                # 解出新買張數 = 現有張數 * (成本 - 目標) / (目標 - 現價)
+                if target_cost > curr_p:
+                    needed_qty = holding_qty * (cost_price - target_cost) / (target_cost - curr_p)
+                    needed_qty = round(needed_qty, 2)
+                    required_fund = needed_qty * curr_p * 1000
+                    
+                    st.success(f"💡 建議在 **{curr_p}** 附近加碼 **{needed_qty}** 張")
+                    st.write(f"💵 估計需準備資金：**{required_fund:,.0f}** 元")
+                    st.info(f"📍 最佳加碼點位：建議參考私募支撐區或季線 (60MA) 附近。")
+                else:
+                    st.warning("目標成本過低，技術上難以達成，請重新調整滑桿。")
+
+            with tab2:
+                st.markdown("### 🔄 無籌碼高拋低吸戰術")
+                # 計算壓力與支撐 (利用 ATR 波動)
+                tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
+                atr = tr.rolling(14).mean().iloc[-1]
+                
+                # 定義區間
+                resistance = round((curr_p + atr * 1.5) / tick) * tick
+                support = round((curr_p - atr * 1.2) / tick) * tick
+                
+                st.write("當前資金流向顯示：", "🔴 法人賣壓中" if c_score < 1.0 else "🟢 法人守護中")
+                
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    st.error(f"⬆️ **壓力區 (高拋點)：{resistance:.2f}**")
+                    st.write("觸及此價位建議：賣出部分持股 (如 1/4)，等待拉回。")
+                with col_s2:
+                    st.success(f"⬇️ **支撐區 (低吸點)：{support:.2f}**")
+                    st.write("觸及此價位建議：買回之前賣出的股數，賺取價差。")
+
+                # 進階建議
+                if c_score > 1.03:
+                    st.info("🔥 **AI 提示：** 法人買超強勁，高拋點可適度上修，不急著賣。")
+                elif c_score < 0.97:
+                    st.warning("⚠️ **AI 提示：** 法人持續出貨，反彈壓力區請務必執行減碼。")
+
+                # 繪製解套地圖
+                st.write("📈 **持股解套地圖 (120日走勢)**")
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.plot(df.index, df['Close'], label='Price', color='#1f77b4')
+                ax.axhline(y=cost_price, color='red', linestyle='--', label='Your Cost (316)')
+                ax.axhline(y=resistance, color='orange', linestyle=':', label='Resistance')
+                ax.axhline(y=support, color='green', linestyle=':', label='Support')
+                ax.fill_between(df.index, support, resistance, color='gray', alpha=0.1)
+                ax.legend()
+                st.pyplot(fig)
+
+        else:
+            st.error("無法抓取股票數據，請確認代碼是否正確。")
 
 
 
