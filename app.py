@@ -1077,7 +1077,7 @@ elif st.session_state.mode == "rescue":
                 st.write("📈 **持股解套地圖 (120日走勢)**")
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.plot(df.index, df['Close'], label='Price', color='#1f77b4')
-                ax.axhline(y=cost_price, color='red', linestyle='--', label='Your Cost (316)')
+                ax.axhline(y=cost_price, color='red', linestyle='--', label='Your Cost ')
                 ax.axhline(y=resistance, color='orange', linestyle=':', label='Resistance')
                 ax.axhline(y=support, color='green', linestyle=':', label='Support')
                 ax.fill_between(df.index, support, resistance, color='gray', alpha=0.1)
