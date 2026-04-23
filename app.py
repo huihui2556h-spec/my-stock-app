@@ -181,27 +181,29 @@ def get_stock_name(stock_id):
         return f"台股 {stock_id}"
 
 # --- 抓股價 ---
-@st.cache_data(ttl=300)  # 建議縮短至 300 秒 (5分鐘)，確保盤中數據有更新
+@st.cache_data(ttl=60) # 盤中建議改為 60 秒更新一次
 def fetch_stock_data(stock_id, period="120d"):
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
-        # 加入 auto_adjust=True 確保價格一致性
-        df = yf.download(symbol, period=period, progress=False, auto_adjust=True)
-        if not df.empty:
-            # 強力清洗：處理 yfinance 的 MultiIndex 結構
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+        try:
+            # 加入 auto_adjust=True 確保除權息修正後的價格一致
+            df = yf.download(symbol, period=period, progress=False, auto_adjust=True)
             
-            # 移除所有含有 NaN 的列，避免計算昨收時抓到空值
-            df = df.dropna(subset=['Close'])
-            
-            # 確保索引是日期格式且排序正確
-            df.index = pd.to_datetime(df.index)
-            df = df.sort_index()
-            
-            return df, symbol
+            if not df.empty:
+                # 【關鍵修改】不論 yfinance 回傳什麼結構，強制拍平欄位
+                if isinstance(df.columns, pd.MultiIndex):
+                    # 只保留第一層 (Close, Open, High...)
+                    df.columns = df.columns.get_level_values(0)
+                
+                # 再次確保欄位名稱沒有多餘空白
+                df.columns = [c.strip() for c in df.columns]
+                
+                # 排除空值，確保最後一筆是真的有價格的
+                df = df.dropna(subset=['Close'])
+                return df, symbol
+        except Exception as e:
+            continue
     return pd.DataFrame(), None
-
 # --- 🎨 自定義台股配色組件 ---
 def stock_box(label, price, pct, acc, color_type="red"):
     bg_color = "#FF4B4B" if color_type == "red" else "#28A745"
