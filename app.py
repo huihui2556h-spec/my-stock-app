@@ -645,6 +645,17 @@ elif st.session_state.mode == "forecast":
                 tech_bias = 1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)
 
 # 最終複合 Bias (⚠️ 這裡改用 c_score)
+                # --- 在計算之前，先設定預設值 ---
+                risk_factor = 1.0  # 預設為 1.0，確保後面計算不會報錯
+
+                # ... 這裡是你原本計算 risk_factor 的邏輯 (例如 fetch_finmind_chips) ...
+                try:
+                    # 假設你的 risk_factor 是從某個函數抓出來的
+                    # chips_data = fetch_finmind_chips(stock_id)
+                    # risk_factor = chips_data[2] (舉例)
+                    pass 
+                except:
+                    risk_factor = 1.0 # 如果抓取失敗，維持 1.0
                 bias = tech_bias * c_score * risk_factor
                 bias = max(0.95, min(1.08, bias)) # 限制範圍
 
