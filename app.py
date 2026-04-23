@@ -181,14 +181,24 @@ def get_stock_name(stock_id):
         return f"台股 {stock_id}"
 
 # --- 抓股價 ---
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=300)  # 建議縮短至 300 秒 (5分鐘)，確保盤中數據有更新
 def fetch_stock_data(stock_id, period="120d"):
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
-        df = yf.download(symbol, period=period, progress=False)
+        # 加入 auto_adjust=True 確保價格一致性
+        df = yf.download(symbol, period=period, progress=False, auto_adjust=True)
         if not df.empty:
+            # 強力清洗：處理 yfinance 的 MultiIndex 結構
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
+            
+            # 移除所有含有 NaN 的列，避免計算昨收時抓到空值
+            df = df.dropna(subset=['Close'])
+            
+            # 確保索引是日期格式且排序正確
+            df.index = pd.to_datetime(df.index)
+            df = df.sort_index()
+            
             return df, symbol
     return pd.DataFrame(), None
 
@@ -599,12 +609,23 @@ elif st.session_state.mode == "forecast":
                 # --- 1. [數據計算區] ---
                 df = df.ffill()
                 name = get_stock_name(stock_id)
-                curr_c = float(df['Close'].iloc[-1])    # 今日收盤
-                prev_close = float(df['Close'].iloc[-2]) # 昨收價
+                # 確保資料量足夠
+                if len(df) < 2:
+                    st.error("數據量不足，無法計算漲跌幅")
+                else:
+    # 這裡是最常出錯的地方：
+    # 如果 yfinance 把「今天盤中」跟「昨天收盤」都列出來，iloc[-1] 跟 iloc[-2] 必須不同
+                    curr_c = float(df['Close'].iloc[-1])    # 最新價
+                    prev_close = float(df['Close'].iloc[-2]) # 真正的前一交易日收盤價
+    
+    # 如果兩者相同，強制抓取倒數第三筆（通常發生在 API 重複回傳今日數據時）
+                    if curr_c == prev_close and len(df) > 2:
+                        prev_close = float(df['Close'].iloc[-3])
+
+                    price_diff = curr_c - prev_close 
+    # 計算百分比
+                    price_change_pct = (price_diff / prev_close) * 100 
                 
-                # --- 2. [族群動能與相對量能計算] ---
-                # A. 獲取地緣政治/避險風險因子 (呼叫你在最上方定義的函數)
-                risk_factor = get_global_risk_impact() 
 
 # B. 獲取 FinMind 籌碼因子 (⚠️ 這裡改用 5 個變數接收)
             # 加上 chip_date 接收第六個回傳值
