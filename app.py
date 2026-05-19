@@ -430,26 +430,43 @@ elif st.session_state.mode == "forecast":
                     plot_df = df.tail(100)
                     
                     fig, ax = plt.subplots(figsize=(11, 5.5))
-                    ax.plot(plot_df.index, plot_df['Close'], label='Close Price (收盤價)', color='#1E293B', linewidth=2, zorder=3)
-                    ax.plot(plot_df.index, plot_df['BB_MA'], label='BB Middle (中軌線)', color='#3B82F6', linestyle='--', alpha=0.8)
-                    ax.plot(plot_df.index, plot_df['BB_Upper'], label='BB Upper (上軌壓力)', color='#EF4444', alpha=0.6, linewidth=1.2)
-                    ax.plot(plot_df.index, plot_df['BB_Lower'], label='BB Lower (下軌支撐)', color='#10B981', alpha=0.6, linewidth=1.2)
+                    # 圖例全部改為英文標籤，確保在 Streamlit Cloud 部署時 100% 不會出現豆腐字
+                    ax.plot(plot_df.index, plot_df['Close'], label='Close Price', color='#1E293B', linewidth=2, zorder=3)
+                    ax.plot(plot_df.index, plot_df['BB_MA'], label='BB Middle (20 MA)', color='#3B82F6', linestyle='--', alpha=0.8)
+                    ax.plot(plot_df.index, plot_df['BB_Upper'], label='BB Upper (2 Std)', color='#EF4444', alpha=0.6, linewidth=1.2)
+                    ax.plot(plot_df.index, plot_df['BB_Lower'], label='BB Lower (2 Std)', color='#10B981', alpha=0.6, linewidth=1.2)
                     
                     ax.fill_between(plot_df.index, plot_df['BB_Lower'], plot_df['BB_Upper'], color='#3B82F6', alpha=0.04)
 
                     # 標註高低極值點與向量
-                    ax.scatter(p_min_idx, wave_low, color='#10B981', s=120, marker='^', label='100D Wave Low (波浪起點)', zorder=5)
-                    ax.scatter(p_max_idx, wave_high, color='#EF4444', s=120, marker='v', label='100D Wave High (波浪頂點)', zorder=5)
+                    ax.scatter(p_min_idx, wave_low, color='#10B981', s=120, marker='^', label='100D Wave Low', zorder=5)
+                    ax.scatter(p_max_idx, wave_high, color='#EF4444', s=120, marker='v', label='100D Wave High', zorder=5)
                     ax.plot([p_min_idx, p_max_idx], [wave_low, wave_high], color='#F59E0B', linestyle=':', linewidth=1.8, label='Wave Vector')
 
-                    ax.set_title(f"{stock_id} Bollinger Bands & Elliott Wave Dashboard", fontsize=11, fontweight='bold', pad=12)
+                    ax.set_title(f"{stock_id} Bollinger Bands & Elliott Wave Dashboard", fontsize=12, fontweight='bold', pad=12)
                     ax.grid(True, linestyle=':', alpha=0.5)
                     ax.legend(loc='upper left', frameon=True, fontsize=9)
                     plt.xticks(rotation=15)
                     plt.tight_layout()
                     st.pyplot(fig)
-                    st.caption("💡 註：本圖表橫軸為歷史交易日期，灰色帶狀區間為標準布林震盪軌道，金黃虛線為多空波浪趨勢向量。")
 
+                    # --- [前端網頁優化中文註解說明區] ---
+                    st.markdown("---")
+                    st.markdown("### 📘 儀表板技術指標與圖例對照說明")
+                    
+                    # 建立 scannable 的表格，讓手機端和電腦端都能一眼看懂圖表線條意義
+                    info_data = {
+                        "圖表項目 (Legend)": ["Close Price", "BB Middle", "BB Upper", "BB Lower", "100D Wave Low", "100D Wave High", "Wave Vector"],
+                        "指標說明": ["每日收盤價", "布林通道中軌 (20日移動平均線 MA)", "布林通道上軌压力線 (中軌 + 2倍標準差)", "布林通道下軌支撐線 (中軌 - 2倍標準差)", "過去100個交易日的波段最低起點", "過去100個交易日的波段最高頂點", "多空波浪趨勢走向與波段幅度向量"]
+                    }
+                    st.dataframe(pd.DataFrame(info_data), use_container_width=True, hide_index=True)
+                    
+                    # 專家警示區塊
+                    st.markdown(f"""
+                    > 💡 **AI 策略觀察指南**：
+                    > 1. **軌道擠壓**：當布林上軌與下軌極度縮小時，代表股價即將噴發或面臨大變盤。
+                    > 2. **向量對齊**：目前股價相較於 **100D Wave High ({wave_high:.2f})** 與 **Wave Low ({wave_low:.2f})**，若正處於上升向量且貼近布林下軌，通常是極佳的右側交易進場點。
+                    """)
 # --- 【SECTOR：類群輪動預警頁面】 ---
 elif st.session_state.mode == "sector":
     st.title("💎 類群輪動預警儀表板")
