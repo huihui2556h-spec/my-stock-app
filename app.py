@@ -9,28 +9,35 @@ from datetime import datetime, time, timedelta
 import pytz
 import matplotlib.pyplot as plt
 import matplotlib
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import r2_score, mean_absolute_error
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# --- [全域設定區 - 嚴格置頂且僅呼叫一次] ---
 st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- [全域設定區] ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
+tw_tz = pytz.timezone("Asia/Taipei")
 
+# --- 🎯 修正圖片亂碼：強制手動載入系統字體 ---
+def set_mpl_font():
+    fonts = ['Microsoft JhengHei', 'PingFang TC', 'Noto Sans CJK TC', 'SimHei', 'Arial Unicode MS']
+    for f in fonts:
+        try:
+            matplotlib.rc('font', family=f)
+            plt.figure()
+            plt.close()
+            break
+        except:
+            continue
+    matplotlib.rcParams['axes.unicode_minus'] = False 
+
+set_mpl_font()
+
+# --- [核心函數定義] ---
 def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
-    import requests
-    import pandas as pd
-    from datetime import datetime, timedelta
-
-    # 預設回傳
     default_res = (1.0, 0.0, 0.0, 0.0, 0.0, "API 維護中")
     pure_id = str(stock_id).split('.')[0]
-    
-    # 嘗試兩種 ID 格式 (上櫃股票有時需要不同後綴)
     id_variants = [pure_id, f"{pure_id}.TW"]
     
     for target_id in id_variants:
@@ -49,7 +56,6 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
                 data = resp.json().get('data', [])
                 if data:
                     df = pd.DataFrame(data)
-                    # 🟢 關鍵：過濾掉所有買賣皆為 0 的無效紀錄
                     df = df[(df['buy'] != 0) | (df['sell'] != 0)]
                     
                     if not df.empty:
@@ -68,14 +74,11 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
         except:
             continue
 
-    # --- 🕯️ 蠟燭兩頭燒：如果 FinMind 徹底失敗，啟動 yfinance 備援 ---
     try:
-        import yfinance as yf
         ytick = yf.Ticker(f"{pure_id}.TWO" if int(pure_id) > 1000 else f"{pure_id}.TW")
         h = ytick.history(period="5d")
         if not h.empty:
             vol_status = h['Volume'].iloc[-1] / h['Volume'].mean()
-            # 模擬一個具有參考價值的籌碼分 (基於量能慣性)
             return (1.01 if vol_status > 1 else 1.0, 0.0, 0.0, 0.0, 0.0, f"{h.index[-1].strftime('%m/%d')} (量能估算)")
     except:
         pass
@@ -85,74 +88,31 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
 def get_global_risk_impact():
     """抓取原油 (BZ=F) 評估地緣政治與避險風險因子"""
     try:
-        # 抓取最近 5 天的原油數據
         oil = yf.download("BZ=F", period="5d", progress=False)
         if oil.empty: return 1.0
-        # 計算 5 日漲跌幅
+        if isinstance(oil.columns, pd.MultiIndex):
+            oil.columns = oil.columns.get_level_values(0)
         oil_change = (oil['Close'].iloc[-1] / oil['Close'].iloc[-5] - 1) * 100
-        # 避險邏輯：原油大漲代表地緣風險升溫，對股市是壓力 (負相關)
-        # 設定：原油每漲 1%，預估位下修 0.4%
         risk_bias = 1 - (oil_change * 0.004) 
         return max(0.95, min(1.05, risk_bias)) 
     except:
         return 1.0
 
-
-
-# --- 1. [定義台股升降單位函數] ---
 def get_tick_size(price):
     if price < 10: return 0.01
     elif price < 50: return 0.05
     elif price < 100: return 0.1
     elif price < 500: return 0.5
     elif price < 1000: return 1.0
-    else: return 5.0  # 台積電等級 (1000元以上)
+    else: return 5.0
 
-# 2. 定義時區，確保日期隨時間自動改變不報錯 [cite: 2026-01-12]
-tw_tz = pytz.timezone("Asia/Taipei")
-
-# 3. 解決圖表亂碼問題 (英文 Legend)
-def set_mpl_font():
-    plt.rcParams['axes.unicode_minus'] = False 
-    # 這裡我們維持使用英文標籤，避免不同系統字體缺失導致的 □□□
-set_mpl_font()
-
-# 4. 初始化 Session State (若尚未初始化)
-if 'mode' not in st.session_state:
-    st.session_state.mode = "home"
-# --- 🎯 修正圖片亂碼：強制手動載入系統字體 ---
-def set_mpl_font():
-    # 嘗試多種常見中文字體名稱，確保在不同 OS 都能正常顯示
-    fonts = ['Microsoft JhengHei', 'PingFang TC', 'Noto Sans CJK TC', 'SimHei', 'Arial Unicode MS']
-    for f in fonts:
-        try:
-            matplotlib.rc('font', family=f)
-            # 測試繪圖是否會報錯
-            plt.figure()
-            plt.close()
-            break
-        except:
-            continue
-    # 解決座標軸負號顯示問題
-    matplotlib.rcParams['axes.unicode_minus'] = False 
-
-set_mpl_font()
-
-st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_icon="💹")
-
-# --- 狀態初始化 ---
 if 'mode' not in st.session_state:
     st.session_state.mode = "home"
 
-def navigate_to(new_mode):
-    st.session_state.mode = new_mode
-    st.rerun()
-
-# --- 核心功能：真實回測勝率判斷 ---
 def calculate_real_accuracy(df, factor, side='high'):
     try:
         df_copy = df.copy().ffill()
-        backtest_days = 60 # 2026-01-12 指示：回測 60 天
+        backtest_days = 60 
         if len(df_copy) < backtest_days + 15: return 85.0
         hits, total = 0, 0
         tr = np.maximum(df_copy['High'] - df_copy['Low'],
@@ -170,7 +130,6 @@ def calculate_real_accuracy(df, factor, side='high'):
     except:
         return 88.0
 
-# --- 獲取名稱 ---
 def get_stock_name(stock_id):
     try:
         url = f"https://tw.stock.yahoo.com/quote/{stock_id}"
@@ -180,181 +139,78 @@ def get_stock_name(stock_id):
     except:
         return f"台股 {stock_id}"
 
-# --- 抓股價 ---
-@st.cache_data(ttl=60) # 盤中建議改為 60 秒更新一次
+@st.cache_data(ttl=60)
 def fetch_stock_data(stock_id, period="120d"):
     for suffix in [".TW", ".TWO"]:
         symbol = f"{stock_id}{suffix}"
         try:
-            # 加入 auto_adjust=True 確保除權息修正後的價格一致
             df = yf.download(symbol, period=period, progress=False, auto_adjust=True)
-            
             if not df.empty:
-                # 【關鍵修改】不論 yfinance 回傳什麼結構，強制拍平欄位
                 if isinstance(df.columns, pd.MultiIndex):
-                    # 只保留第一層 (Close, Open, High...)
                     df.columns = df.columns.get_level_values(0)
-                
-                # 再次確保欄位名稱沒有多餘空白
                 df.columns = [c.strip() for c in df.columns]
-                
-                # 排除空值，確保最後一筆是真的有價格的
                 df = df.dropna(subset=['Close'])
                 return df, symbol
-        except Exception as e:
+        except:
             continue
     return pd.DataFrame(), None
-# --- 🎨 自定義台股配色組件 ---
-def stock_box(label, price, pct, acc, color_type="red"):
-    bg_color = "#FF4B4B" if color_type == "red" else "#28A745"
-    arrow = "↑" if color_type == "red" else "↓"
-    st.markdown(f"""
-        <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 5px solid {bg_color}; margin-bottom: 10px;">
-            <p style="margin:0; font-size:14px; color:#555;">{label}</p>
-            <h2 style="margin:0; padding:5px 0; color:#333;">{price:.2f}</h2>
-            <span style="background-color:{bg_color}; color:white; padding:2px 8px; border-radius:5px; font-size:14px;">
-                {arrow} {pct:.2f}%
-            </span>
-            <p style="margin-top:10px; font-size:12px; color:#888;">↳ 近20日達成率：{acc:.1f}%</p>
-        </div>
-    """, unsafe_allow_html=True)
 
-# =========================================================
-# 2. 核心運算：全自動資金流向分析
-# =========================================================
-
-def analyze_full_flow():
-    """【分析引擎】針對所有細分區段計算：1. 平均漲跌幅 2. 資金流入比 (今日量/5日均量)"""
-    flow_report = []
-    # 遍歷每一組產業鏈
-    for chain_name, tickers in INDUSTRY_CHAINS.items():
-        try:
-            # 抓取 10 天數據以便計算 5 日平均成交量
-            data = yf.download(tickers, period="10d", progress=False)
-            if data.empty: continue
-            
-            # 1. 漲跌幅計算 (今日收盤 vs 昨日收盤)
-            ret = (data['Close'].iloc[-1] / data['Close'].iloc[-2] - 1).mean() * 100
-            
-            # 2. 資金流入強度計算 (今日總量 / 近五日平均總量)
-            # 數值 > 1.0 代表該細分產業今日熱度高於平日，為資金焦點
-            today_vol = data['Volume'].iloc[-1].sum()
-            avg_vol_5d = data['Volume'].tail(5).mean().sum()
-            inflow_ratio = today_vol / avg_vol_5d if avg_vol_5d > 0 else 1.0
-            
-            flow_report.append({"產業細分": chain_name, "漲跌%": ret, "資金流入": inflow_ratio})
-        except: continue
-    return pd.DataFrame(flow_report)
 # ================== 介面控制 ==================
+name_map = {
+    "PCB-CCL": "PCB-材料 (CCL/銅箔)", "PCB-Substrate": "PCB-載板 (ABF/BT)", "PCB-Assembly": "PCB-組裝加工 (硬板/HDI)",
+    "Memory-Fab": "記憶體-原廠/代工", "Memory-Module": "記憶體-模組廠", "Memory-Controller": "記憶體-控制 IC", "Memory-DDR5": "記憶體-DDR5/高速傳輸",
+    "Semi-Equip": "半導體-設備/CoWoS", "Semi-OSAT": "半導體-封測 (先進封裝/測試)", "AI-ASIC": "AI 特用晶片 (矽智財/ASIC)",
+    "AI-Case": "AI 伺服器 (機殼/滑軌)", "AI-Cooling": "AI 伺服器 (散熱/水冷)", "AI-ODM": "AI 伺服器 (ODM 代工)",
+    "CPO-Silicon": "矽光子 (CPO/光通訊)", "Satellite-LEO": "低軌衛星 (航太/地面站)",
+    "Display-Panel": "面板-驅動 IC/面板廠", "Passive-Comp": "被動元件 (MLCC/電阻)", "Optical-Lens": "光學鏡頭 (手機/車載)",
+    "Auto-EV": "車用電子 (電動車/二極體)", "Power-Grid": "重電/電力 (政策股)", "Shipping": "航運 (貨櫃/散裝)"
+}
+
+INDUSTRY_CHAINS_EN = {
+    "PCB-CCL": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO", "2367.TW"],
+    "PCB-Substrate": ["8046.TW", "3037.TW", "3189.TW", "6667.TW"],
+    "PCB-Assembly": ["2367.TW", "2313.TW", "2368.TW", "4958.TW", "3044.TW"],
+    "Memory-Fab": ["2344.TW", "2337.TW", "2408.TW", "3006.TW"],
+    "Memory-Module": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO"],
+    "Memory-Controller": ["8299.TW", "4966.TW", "6233.TWO"],
+    "Memory-DDR5": ["6138.TW", "6213.TW", "8299.TW", "3260.TWO"],
+    "Semi-Equip": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO"],
+    "Semi-OSAT": ["2311.TW", "3711.TW", "2449.TW", "6147.TWO"],
+    "AI-ASIC": ["3661.TW", "3443.TW", "6643.TW", "3035.TW"],
+    "AI-ODM": ["2382.TW", "2317.TW", "3231.TW", "6669.TW"],
+    "AI-Cooling": ["3017.TW", "3324.TW", "2421.TW", "6230.TW"],
+    "AI-Case": ["8210.TW", "2059.TW", "6803.TW", "3693.TW"],
+    "CPO-Silicon": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW"],
+    "Satellite-LEO": ["2313.TW", "3491.TWO", "2314.TW", "3380.TW"],
+    "Display-Panel": ["2409.TW", "3481.TW", "6116.TW", "3034.TW"],
+    "Passive-Comp": ["2327.TW", "2492.TW", "6173.TWO", "6127.TWO"],
+    "Optical-Lens": ["3008.TW", "3406.TW", "3362.TW", "3504.TW"],
+    "Shipping": ["2603.TW", "2609.TW", "2615.TW", "2606.TW"],
+    "Power-Grid": ["1513.TW", "1503.TW", "1519.TW", "1514.TW"],
+    "Auto-EV": ["2317.TW", "2481.TW", "5425.TWO", "3675.TW"]
+}
 
 if st.session_state.mode == "home":
     st.title("⚖️ 台股 AI 交易決策系統")
     col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         if st.button("⚡ 盤中即時量價", use_container_width=True):
-            st.session_state.mode = "realtime"
-            st.rerun()
+            st.session_state.mode = "realtime"; st.rerun()
     with col_b:
         if st.button("📊 波段預估", use_container_width=True):
-            st.session_state.mode = "forecast"
-            st.rerun()
+            st.session_state.mode = "forecast"; st.rerun()
     with col_c:
         if st.button("💎 類群輪動預警", use_container_width=True):
-            st.session_state.mode = "sector"
-            st.rerun()
+            st.session_state.mode = "sector"; st.rerun()
     with col_d:
         if st.button("🆘 拯救套牢", use_container_width=True):
-            st.session_state.mode = "rescue"
-            st.rerun()
-# --- A. 💎 類群輪動預警頁面 ---
+            st.session_state.mode = "rescue"; st.rerun()
+
 elif st.session_state.mode == "sector":
-    # 1. 標題放在最上面 (進入此模式後才顯示)
     st.title("💎 類群輪動預警")
-    
-    # 2. 返回按鈕放在標題下方 (不放在 Sidebar，直接放在頁面裡)
     if st.button("⬅️ 返回首頁"):
-        st.session_state.mode = "home"
-        st.rerun()
-    
-    st.divider()# 增加一條分隔線，美化版面
-    
-    # 3. 頁面提示與內容
-    st.markdown("### 目前監控範例：PCB、記憶體、AI 伺服器、重電全系列")
-    name_map = {
-        # --- PCB 族群 ---
-        "PCB-CCL": "PCB-材料 (CCL/銅箔)",
-        "PCB-Substrate": "PCB-載板 (ABF/BT)",
-        "PCB-Assembly": "PCB-組裝加工 (硬板/HDI)",
-        
-        # --- 記憶體族群 ---
-        "Memory-Fab": "記憶體-原廠/代工",
-        "Memory-Module": "記憶體-模組廠",
-        "Memory-Controller": "記憶體-控制 IC",
-        "Memory-DDR5": "記憶體-DDR5/高速傳輸",
-        
-        # --- 半導體與設備 ---
-        "Semi-Equip": "半導體-設備/CoWoS",
-        "Semi-OSAT": "半導體-封測 (先進封裝/測試)",
-        "AI-ASIC": "AI 特用晶片 (矽智財/ASIC)",
-        
-        # --- AI 伺服器核心 ---
-        "AI-Case": "AI 伺服器 (機殼/滑軌)",
-        "AI-Cooling": "AI 伺服器 (散熱/水冷)",
-        "AI-ODM": "AI 伺服器 (ODM 代工)",
-        
-        # --- 通訊與新技術 ---
-        "CPO-Silicon": "矽光子 (CPO/光通訊)",
-        "Satellite-LEO": "低軌衛星 (航太/地面站)",
-        
-        # --- 電子周邊與組件 ---
-        "Display-Panel": "面板-驅動 IC/面板廠",
-        "Passive-Comp": "被動元件 (MLCC/電阻)",
-        "Optical-Lens": "光學鏡頭 (手機/車載)",
-        "Auto-EV": "車用電子 (電動車/二極體)",
-        
-        # --- 政策與傳產 ---
-        "Power-Grid": "重電/電力 (政策股)",
-        "Shipping": "航運 (貨櫃/散裝)"
-    }
-
-    # 產業鏈英文 ID 定義 (避免圖表亂碼)
-    INDUSTRY_CHAINS_EN = {
-        "PCB-CCL": ["6213.TW", "2383.TW", "6274.TW", "8358.TWO", "6213.TW", "2367.TW"], # 金居、台光電、台燿、聯茂、燿華
-        "PCB-Substrate": ["8046.TW", "3037.TW", "3189.TW", "6667.TW"], # 欣興、南電、景碩、信紘科
-        "PCB-Assembly": ["2367.TW", "2313.TW", "2368.TW", "4958.TW", "3044.TW", "6153.TW"], # 燿華、華通、金像電、臻鼎、健鼎、嘉聯益
-
-        # --- 2. 記憶體族群 (細分 Fab、模組、DDR5) ---
-        "Memory-Fab": ["2344.TW", "2337.TW", "2408.TW", "3006.TW"], # 華邦電、旺宏、南亞科、威剛
-        "Memory-Module": ["3260.TWO", "8299.TW", "2451.TW", "3264.TWO", "3546.TW"], # 威剛、群聯、創見、欣銓、宇瞻
-        "Memory-Controller": ["8299.TW", "4966.TW", "6233.TWO", "6104.TW"], # 群聯、譜瑞、旺玖、九齊
-        "Memory-DDR5": ["6138.TW", "6213.TW", "8299.TW", "3260.TWO", "6515.TW"], # 茂達、金居、群聯、威剛、穎崴
-
-        # --- 3. 半導體、封測與設備 (加入先進封裝) ---
-        "Semi-Equip": ["3131.TWO", "3583.TW", "1560.TW", "6187.TWO", "2467.TW", "3680.TW"], # 弘塑、辛耘、天虹、萬潤、志聖、登騰
-        "Semi-OSAT": ["2311.TW", "3711.TW", "2449.TW", "6147.TWO", "6239.TW", "3374.TWO"], # 日月光、京元電、力成、精測、力旺
-        "AI-ASIC": ["3661.TW", "3443.TW", "6643.TW", "3035.TW", "8227.TW", "6531.TW"], # 世芯、智原、力旺、創意、巨有、愛普
-
-        # --- 4. AI 伺服器核心 (散熱、機殼、ODM) ---
-        "AI-ODM": ["2382.TW", "2317.TW", "3231.TW", "6669.TW", "2356.TW", "2376.TW"], # 廣達、鴻海、緯創、緯穎、英業達、技嘉
-        "AI-Cooling": ["3017.TW", "3324.TW", "2421.TW", "6230.TW", "3483.TW", "3338.TW"], # 奇鋐、雙鴻、建準、超眾、力致、泰碩
-        "AI-Case": ["8210.TW", "2059.TW", "6803.TW", "3693.TW", "3013.TW", "6117.TW"], # 勤誠、川湖、晟銘電、營邦、迎廣
-
-        # --- 5. 通訊與新技術 (CPO、低軌衛星) ---
-        "CPO-Silicon": ["3363.TWO", "4979.TWO", "3081.TWO", "6451.TW", "3450.TW", "4908.TWO"], # 上詮、華星光、聯亞、訊芯、聯鈞、前鼎
-        "Satellite-LEO": ["2313.TW", "3491.TWO", "2314.TW", "3380.TW", "6285.TW", "2383.TW"], # 華通、昇達科、台揚、明泰、啟碁、台光電
-
-        # --- 6. 電子周邊 (面板、被動元件、光學) ---
-        "Display-Panel": ["2409.TW", "3481.TW", "6116.TW", "3034.TW", "3545.TW", "4961.TW"], # 友達、群創、彩晶、聯詠、敦泰、天鈺
-        "Passive-Comp": ["2327.TW", "2492.TW", "6173.TWO", "6127.TWO", "2456.TW", "2478.TW"], # 國巨、華新科、信昌電、九豪、奇力新、大毅
-        "Optical-Lens": ["3008.TW", "3406.TW", "3362.TW", "3504.TW", "3441.TWO", "6668.TWO"], # 大立光、玉晶光、先進光、揚明光、聯一光、中揚光
-
-        # --- 7. 傳統產業與政策股 (航運、重電、車用) ---
-        "Shipping": ["2603.TW", "2609.TW", "2615.TW", "2606.TW", "2637.TW", "2618.TW"], # 長榮、陽明、萬海、裕民、慧洋、長榮航
-        "Power-Grid": ["1513.TW", "1503.TW", "1519.TW", "1514.TW", "1504.TW", "1508.TW"], # 中興電、士電、華城、亞力、東元、正道
-        "Auto-EV": ["2317.TW", "2481.TW", "5425.TWO", "3675.TW", "2351.TW", "1536.TW"] # 鴻海、強茂、台半、德微、順德、和大
-    }
-    
-   
+        st.session_state.mode = "home"; st.rerun()
+    st.divider()
     
     with st.spinner('AI 正在計算各產業獲利潛力...'):
         flow_report = []
@@ -362,6 +218,8 @@ elif st.session_state.mode == "sector":
             try:
                 data = yf.download(tickers, period="10d", progress=False)
                 if not data.empty:
+                    if isinstance(data.columns, pd.MultiIndex):
+                        data.columns = data.columns.get_level_values(0)
                     ret = (data['Close'].iloc[-1] / data['Close'].iloc[-2] - 1).mean() * 100
                     vol_ratio = data['Volume'].iloc[-1].sum() / data['Volume'].tail(5).mean().sum()
                     flow_report.append({"ID": en_id, "漲跌%": ret, "資金流入": vol_ratio})
@@ -370,19 +228,13 @@ elif st.session_state.mode == "sector":
         df_flow = pd.DataFrame(flow_report)
 
         if not df_flow.empty:
-            # --- 🔮 核心：建議買進判斷邏輯 ---
-            # 策略：資金爆量 (流入>1.2) 且 今日有撐 (漲幅>-0.5)
             buy_candidates = df_flow[(df_flow['資金流入'] > 1.2) & (df_flow['漲跌%'] > -0.5)]
-            
             st.subheader("🎯 目前強勢族群")
             if not buy_candidates.empty:
-                # 排序出最推薦的類股
                 best_sector_id = buy_candidates.sort_values(by="資金流入", ascending=False).iloc[0]['ID']
                 st.success(f"🚀 **【強烈建議關注】：{name_map[best_sector_id]}**")
-                st.info(f"💡 理由：該族群資金流入強度達 {buy_candidates['資金流入'].max():.2f} 倍，顯示大戶籌碼高度集中，今日股價同步走強，發動機率高。")
                 strong_tickers = INDUSTRY_CHAINS_EN.get(best_sector_id, [])
                 if strong_tickers:
-                    st.write(f"🔍 **{name_map[best_sector_id]} 領頭標的：**")
                     s_cols = st.columns(len(strong_tickers))
                     for idx, ticker in enumerate(strong_tickers):
                         try:
@@ -394,40 +246,20 @@ elif st.session_state.mode == "sector":
                                 with s_cols[idx]:
                                     st.metric(label=s_name, value=f"{s_price_df['Close'].iloc[-1]:.2f}", delta=f"{s_ret:.2f}%")
                         except: continue
-            
             else:
-                st.warning("⚠️ 目前多數類股處於縮量或盤整期，暫無「爆量起漲」標的，建議保留資金分批布局。")
+                st.warning("⚠️ 目前多數類股處於縮量或盤整期，暫無「爆量起漲」標的。")
 
             st.divider()
-            if not df_flow.empty:
-            # ==========================================
-            # 1. [建議買進邏輯放在這裡] - AI 判斷區
-            # ==========================================
-               low_base_candidates = df_flow[
-                 (df_flow['資金流入'] > 1.05) & 
-                 (df_flow['資金流入'] < 1.8) & 
-                 (df_flow['漲跌%'] >= -1.0) & 
-                 (df_flow['漲跌%'] <= 2.5)
-            ]
-            
+            low_base_candidates = df_flow[(df_flow['資金流入'] > 1.05) & (df_flow['資金流入'] < 1.8) & (df_flow['漲跌%'] >= -1.0) & (df_flow['漲跌%'] <= 2.5)]
             st.subheader("🎯 AI 低基期潛力產業建議")
             if not low_base_candidates.empty:
-                # 1. 鎖定潛力產業
-                best_bet = low_base_candidates.sort_values(by="資金流入", ascending=False).iloc[0]
-                best_id = best_bet['ID']
-                
+                best_id = low_base_candidates.sort_values(by="資金流入", ascending=False).iloc[0]['ID']
                 st.success(f"🚀 **【潛力補漲關注】：{name_map[best_id]}**")
-                
-                # 2. 自動抓取該族群內的具體標的
                 target_tickers = INDUSTRY_CHAINS_EN.get(best_id, [])
-                
                 if target_tickers:
-                    st.write(f"💡 **族群內推薦標的：**")
-                    # 建立美觀的推薦卡片
                     cols = st.columns(len(target_tickers))
                     for idx, ticker in enumerate(target_tickers):
                         try:
-                            # 獲取個股名稱與今日表現
                             t_data = yf.Ticker(ticker)
                             raw_name = get_stock_name(ticker.split('.')[0])
                             t_name = raw_name.replace("走勢圖", "").replace("Yahoo奇摩股市", "").strip()
@@ -436,69 +268,35 @@ elif st.session_state.mode == "sector":
                                 t_ret = (t_price['Close'].iloc[-1] / t_price['Close'].iloc[-2] - 1) * 100
                                 with cols[idx]:
                                     st.metric(label=t_name, value=f"{t_price['Close'].iloc[-1]:.2f}", delta=f"{t_ret:.2f}%")
-                        except:
-                            continue
+                        except: continue
 
             st.divider()
-            # --- 📋 詳細數據表格 (隱藏左邊數字) ---
-            st.write("📋 **詳細數據明細**")
             df_display = df_flow.copy()
             df_display['產業名稱'] = df_display['ID'].map(name_map)
-            st.dataframe(
-                df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), 
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), use_container_width=True, hide_index=True)
 
-            # --- 📊 繪製圖表 (英文標籤) ---
             st.write("📈 **Sector Money Flow (資金流入排行榜)**")
             fig, ax = plt.subplots(figsize=(10, 6))
             df_plot = df_flow.sort_values(by="資金流入")
             ax.barh(df_plot['ID'], df_plot['資金流入'], color='gold', edgecolor='black')
             ax.axvline(x=1.0, color='red', ls='--', alpha=0.6)
             st.pyplot(fig)
-            
-
-            # --- 📝 中文註解 ---
-            st.markdown("#### 📘 分類註解 (Legends):")
-            c1, c2 = st.columns(2)
-            sorted_en_ids = df_plot['ID'].tolist()[::-1]
-            for i, en_id in enumerate(sorted_en_ids):
-                with (c1 if i % 2 == 0 else c2):
-                    st.write(f"- **{en_id}**: {name_map[en_id]}")
-            
-            st.divider()
-
-            
-            
-        else:
-            st.error("暫時無法取得數據，請確認網路或 API 連線。")
 
 elif st.session_state.mode == "realtime":
-     st.title("⚡ 盤中即時量價（當沖）")
-     if st.sidebar.button("⬅️ 返回首頁"): 
-          st.session_state.mode = "home"
-          st.rerun()
-     st.divider()
-        
-          
+    st.title("⚡ 盤中即時量價（當沖）")
+    if st.sidebar.button("⬅️ 返回首頁"): 
+        st.session_state.mode = "home"; st.rerun()
+    st.divider()
+    
+    now = datetime.now(tw_tz)
+    is_market_open = now.weekday() < 5 and (time(9, 0) <= now.time() <= time(13, 30))
+    stock_id = st.text_input("輸入股票代碼（如：2330）")
 
-     from datetime import datetime, time
-     import pytz
-     tw_tz = pytz.timezone("Asia/Taipei")
-     now = datetime.now(tw_tz)
-    # 交易時間判斷：週一至週五 09:00 ~ 13:30
-     is_market_open = now.weekday() < 5 and (time(9, 0) <= now.time() <= time(13, 30))
-
-     stock_id = st.text_input("輸入股票代碼（如：2330）")
-
-     if stock_id:
-          df, sym = fetch_stock_data(stock_id, period="60d")
-        
-          if df.empty:
+    if stock_id:
+        df, sym = fetch_stock_data(stock_id, period="60d")
+        if df.empty:
             st.error("❌ 查無資料，請檢查代碼是否正確。")
-          else:
-            # --- [基礎數據準備] ---
+        else:
             df = df.ffill()
             name = get_stock_name(stock_id)
             curr_price = float(df['Close'].iloc[-1])
@@ -506,30 +304,19 @@ elif st.session_state.mode == "realtime":
             price_diff = curr_price - prev_close
             active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
 
-           
-
-            # --- [3. 關鍵邏輯：未開盤僅顯示警示，盤中才計算動態預測] ---
             if not is_market_open:
-                # 未開盤：顯示警示標語，並停止執行後續預測
                 st.warning(f"🕒 【目前非交易時段】系統暫停動態演算。現在時間：{now.strftime('%H:%M')}。")
-                st.info("💡 盤中 AI 建議點位將於台股開盤時間 (09:00 - 13:30) 自動啟動即時演算。")
             else:
-                # 盤中時間：顯示動態預測
                 st.success(f"🟢 【盤中 AI 動態監控中】數據隨量價即時校正")
-
-                recent_std = df['Close'].tail(15).std() # 計算近期波動
-                avg_vol = df['Volume'].tail(10).mean()  # 計算平均成交量
-                instant_vol_factor = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1.0 # 計算量能倍數
-                clean_name = name.split('(')[0].split('-')[0].strip() # 處理括號名稱
+                recent_std = df['Close'].tail(15).std()
+                avg_vol = df['Volume'].tail(10).mean()
+                instant_vol_factor = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1.0
 
                 st.markdown(f"""
-                    <style>
-                        @media (max-width: 600px) {{ .main-price {{ font-size: 52px !important; }} }}
-                    </style>
                     <div style='background: #FFFFFF; padding: 25px; border-radius: 18px; border-left: 12px solid {active_color}; border: 1px solid #E2E8F0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px;'>
                         <div style='color: #0F172A; font-size: 28px; font-weight: 800;'>{name} ({sym})</div>
                         <div style='display: flex; align-items: baseline; flex-wrap: wrap; margin-top:10px;'>
-                            <b class='main-price' style='font-size: 70px; color: {active_color}; line-height: 1;'>{curr_price:.2f}</b>
+                            <b style='font-size: 70px; color: {active_color}; line-height: 1;'>{curr_price:.2f}</b>
                             <div style='margin-left: 15px;'>
                                 <span style='font-size: 28px; color: {active_color}; font-weight: 900; display: block;'>
                                     {'▲' if price_diff >= 0 else '▼'} {abs(price_diff):.2f}
@@ -542,65 +329,32 @@ elif st.session_state.mode == "realtime":
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # 1. 動態信心係數 (Confidence Factor)
-                # 觀察最近 5 分鐘的價格是否穩定，若震盪劇烈則擴大安全邊際
                 stability_index = df['Close'].tail(5).std() / recent_std
                 confidence_shield = max(1.0, min(2.0, stability_index))
-
-                # 2. 動態量價擴展 (Dynamic Expansion)
-                # 買點不再是固定減去多少，而是根據「能量守恆」：
-                # 當成交量暴增時，波動空間會呈非線性擴張 (例如開平方根)
                 vol_expansion = np.sqrt(instant_vol_factor) 
                 
-                # 3. 終極演算：點位由「即時波動率」與「能量擴展」交互計算
-                # 這裡沒有 1.2 或 1.5，而是由 stability_index 與 vol_expansion 決定
                 dynamic_offset_low = recent_std * (confidence_shield / vol_expansion)
                 dynamic_offset_high = recent_std * (vol_expansion * confidence_shield)
                 
-                # 4. 生成動態買賣點
                 buy_support = curr_price - dynamic_offset_low
                 sell_resist = curr_price + dynamic_offset_high
 
-                # --- [對齊 Tick Size] ---
                 tick = get_tick_size(curr_price)
                 buy_point = round(buy_support / tick) * tick
                 sell_target = round(sell_resist / tick) * tick
                 expected_return = (sell_target - buy_point) / buy_point * 100
 
-                # --- [顯示當沖 AI 建議點位] ---
-                st.subheader("🎯 當沖 AI 動態演算建議")
                 d1, d2, d3 = st.columns(3)
-                
                 with d1:
-                    st.markdown(f"""
-                        <div style="background:#F0F9FF; padding:20px; border-radius:12px; border-left:8px solid #3182CE; text-align:center;">
-                            <b style="color:#2C5282; font-size:14px;">🔹 動態支撐買點</b>
-                            <h2 style="color:#1E40AF; margin:10px 0;">{buy_point:.2f}</h2>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"<div style='background:#F0F9FF; padding:20px; border-radius:12px; border-left:8px solid #3182CE; text-align:center;'><b style='color:#2C5282; font-size:14px;'>🔹 動態支撐買點</b><h2 style='color:#1E40AF; margin:10px 0;'>{buy_point:.2f}</h2></div>", unsafe_allow_html=True)
                 with d2:
-                    st.markdown(f"""
-                        <div style="background:#FFF5F5; padding:20px; border-radius:12px; border-left:8px solid #E53E3E; text-align:center;">
-                            <b style="color:#9B2C2C; font-size:14px;">🔴 動態壓力賣點</b>
-                            <h2 style="color:#991B1B; margin:10px 0;">{sell_target:.2f}</h2>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"<div style='background:#FFF5F5; padding:20px; border-radius:12px; border-left:8px solid #E53E3E; text-align:center;'><b style='color:#9B2C2C; font-size:14px;'>🔴 動態壓力賣點</b><h2 style='color:#991B1B; margin:10px 0;'>{sell_target:.2f}</h2></div>", unsafe_allow_html=True)
                 with d3:
-                    st.markdown(f"""
-                        <div style="background:#F0FFF4; padding:20px; border-radius:12px; border-left:8px solid #38A169; text-align:center;">
-                            <b style="color:#22543D; font-size:14px;">📈 預期報酬</b>
-                            <h2 style="color:#2F855A; margin:10px 0;">{expected_return:.2f}%</h2>
-                        </div>
-                    """, unsafe_allow_html=True)
-                  
-                if expected_return < 1.2:
-                    st.info("💡 目前即時波動率極低，建議等待量能噴發後再參考點位。")
+                    st.markdown(f"<div style='background:#F0FFF4; padding:20px; border-radius:12px; border-left:8px solid #38A169; text-align:center;'><b style='color:#22543D; font-size:14px;'>📈 預期報酬</b><h2 style='color:#2F855A; margin:10px 0;'>{expected_return:.2f}%</h2></div>", unsafe_allow_html=True)
 
 elif st.session_state.mode == "forecast":
-    
     if st.sidebar.button("⬅️ 返回首頁"):
-        st.session_state.mode = "home"
-        st.rerun()
+        st.session_state.mode = "home"; st.rerun()
     st.title("📊 波段預估")
     stock_id = st.text_input("輸入代碼 (例: 2330)")
 
@@ -608,677 +362,80 @@ elif st.session_state.mode == "forecast":
         with st.spinner('AI 多因子計算與回測中...'):
             df, sym = fetch_stock_data(stock_id)
             if not df.empty:
-                # --- 1. [數據計算區] ---
                 df = df.ffill()
                 name = get_stock_name(stock_id)
-                # 確保資料量足夠
                 if len(df) < 2:
-                    st.error("數據量不足，無法計算漲跌幅")
+                    st.error("數據量不足")
                 else:
-    # 這裡是最常出錯的地方：
-    # 如果 yfinance 把「今天盤中」跟「昨天收盤」都列出來，iloc[-1] 跟 iloc[-2] 必須不同
-                    curr_c = float(df['Close'].iloc[-1])    # 最新價
-                    prev_close = float(df['Close'].iloc[-2]) # 真正的前一交易日收盤價
+                    curr_c = float(df['Close'].iloc[-1]) 
+                    prev_close = float(df['Close'].iloc[-2]) 
     
-    # 如果兩者相同，強制抓取倒數第三筆（通常發生在 API 重複回傳今日數據時）
                     if curr_c == prev_close and len(df) > 2:
                         prev_close = float(df['Close'].iloc[-3])
 
                     price_diff = curr_c - prev_close 
-    # 計算百分比
                     price_change_pct = (price_diff / prev_close) * 100 
                 
+                    c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
+                    relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
+                    sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
+                    sector_bias = 1 + (sector_momentum * 0.005)
 
-# B. 獲取 FinMind 籌碼因子 (⚠️ 這裡改用 5 個變數接收)
-            # 加上 chip_date 接收第六個回傳值
-                c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
+                    # 🟢 【修正】正確呼叫原油避險因子函數，活化全球風險控管
+                    risk_factor = get_global_risk_impact()
+                    
+                    tech_bias = 1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)
+                    bias = tech_bias * c_score * risk_factor
+                    bias = max(0.95, min(1.08, bias)) 
 
-# C. 相對成交量
-                relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
+                    tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
+                    atr = tr.rolling(14).mean().iloc[-1]
+                    
+                    vol_impact = max(0.02, min(0.12, 0.04 * relative_volume * sector_bias))
+                    
+                    if curr_c >= prev_close:
+                        est_open_raw = curr_c + (atr * vol_impact * bias)
+                    else:
+                        est_open_raw = curr_c - (atr * vol_impact / bias)
 
-# D. 族群輪動慣性
-                sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
-                sector_bias = 1 + (sector_momentum * 0.005)
+                    tick = get_tick_size(curr_c)
+                    vol_inertia = round((atr * bias) / tick) * tick 
+                    est_open = round(est_open_raw / tick) * tick
+                    active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
+                    clean_name = name.split('(')[0].split('-')[0].strip()
+                    
+                    # 🟢 【修正】計算即時動態勝率回測並呈現在前端
+                    real_acc = calculate_real_accuracy(df, factor=vol_impact)
 
-# --- 3. [核心修正 Bias 計算] ---
-# 原有的技術面 Bias
-                tech_bias = 1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)
+                    st.markdown(f"""
+                        <div style='background: #FFFFFF; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.05);'>
+                            <h2 style='color: #1E293B; margin: 0; font-size: 24px;'>({clean_name})的收盤價</h2>
+                            <div style='display: flex; align-items: baseline; flex-wrap: wrap;'>
+                                <b style='font-size: 75px; color: {active_color}; letter-spacing: -2px;'>{curr_c:.2f}</b>
+                                <div style='margin-left: 15px;'>
+                                    <span style='font-size: 28px; color: {active_color}; font-weight: 900; display: block;'>
+                                        {'▲' if price_diff >= 0 else '▼'} {abs(price_diff):.2f}
+                                    </span>
+                                    <span style='font-size: 18px; color: {active_color}; font-weight: 700;'>
+                                        ({price_change_pct:.2f}%)
+                                    </span>
+                                </div>
+                            </div>
+                            <p style="margin: 5px 0 0 0; font-size: 13px; color: #64748B;">🎯 近 60 日策略預估達成勝率：{real_acc:.1f}%</p>
+                        </div>
 
-# 最終複合 Bias (⚠️ 這裡改用 c_score)
-                # --- 在計算之前，先設定預設值 ---
-                risk_factor = 1.0  # 預設為 1.0，確保後面計算不會報錯
-
-                # ... 這裡是你原本計算 risk_factor 的邏輯 (例如 fetch_finmind_chips) ...
-                try:
-                    # 假設你的 risk_factor 是從某個函數抓出來的
-                    # chips_data = fetch_finmind_chips(stock_id)
-                    # risk_factor = chips_data[2] (舉例)
-                    pass 
-                except:
-                    risk_factor = 1.0 # 如果抓取失敗，維持 1.0
-                bias = tech_bias * c_score * risk_factor
-                bias = max(0.95, min(1.08, bias)) # 限制範圍
-
-                # ATR 基礎波動計算 [cite: 2026-01-12]
-                tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
-                atr = tr.rolling(14).mean().iloc[-1]
-                
-                # --- 4. [量能驅動開盤預估] ---
-                # 不使用固定 0.05，改由相對量能 relative_volume 決定跳空強度 [cite: 2026-01-12]
-                vol_impact = max(0.02, min(0.12, 0.04 * relative_volume * sector_bias))
-                
-                if curr_c >= prev_close:
-                    est_open_raw = curr_c + (atr * vol_impact * bias) # 向上慣性 [cite: 2026-01-12]
-                else:
-                    est_open_raw = curr_c - (atr * vol_impact / bias) # 向下慣性 (考慮過跌) [cite: 2026-01-12]
-
-                # --- 5. [台股 Tick Size 修正] ---
-                # 呼叫頂部的 get_tick_size 函數 [cite: 2026-01-12]
-                tick = get_tick_size(curr_c)
-                
-                inertia_factor = np.sqrt(relative_volume)
-                vol_inertia = round((atr * bias) / tick) * tick 
-                
-                # 修正預估開盤：符合台股跳動單位 [cite: 2026-01-12]
-                est_open = round(est_open_raw / tick) * tick
-
-                price_diff = curr_c - prev_close 
-                active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
-
-
-                # --- [2. 排版優化區：解決手機對比與字體問題] ---
-                clean_name = name.split('(')[0].split('-')[0].strip()
-                
-                st.markdown(f"""
-                    <style>
-                        /* 手機端自動縮小大字體 */
-                        @media (max-width: 600px) {{
-                            .main-price {{ font-size: 55px !important; }}
-                            .data-row {{ flex-direction: column !important; }}
-                        }}
-                    </style>
-
-                    <div style='background: #FFFFFF; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.05);'>
-                        <h2 style='color: #1E293B; margin: 0; font-size: 24px;'>({clean_name})的收盤價</h2>
-                        <div style='display: flex; align-items: baseline; flex-wrap: wrap;'>
-                            <b class='main-price' style='font-size: 75px; color: {active_color}; letter-spacing: -2px;'>{curr_c:.2f}</b>
-                            <div style='margin-left: 15px;'>
-                                <span style='font-size: 28px; color: {active_color}; font-weight: 900; display: block;'>
-                                    {'▲' if price_diff >= 0 else '▼'} {abs(price_diff):.2f}
-                                </span>
-                                <span style='font-size: 18px; color: {active_color}; font-weight: 700;'>
-                                    ({(price_diff/prev_close*100):.2f}%)
-                                </span>
+                        <div style='display: flex; background: #0F172A; padding: 15px; border-radius: 12px; color: white; margin-top: 15px; gap: 10px;'>
+                            <div style='flex: 1; text-align: center; border-right: 1px solid #334155;'>
+                                <span style='font-size: 12px; color: #94A3B8;'>複合籌碼風險偏置</span>
+                                <div style='font-size: 18px; font-weight: bold;'>{bias:.3f}</div>
+                            </div>
+                            <div style='flex: 1; text-align: center; border-right: 1px solid #334155;'>
+                                <span style='font-size: 12px; color: #94A3B8;'>波動慣性支撐</span>
+                                <div style='font-size: 18px; font-weight: bold; color: #FACC15;'>{vol_inertia:.2f}</div>
+                            </div>
+                            <div style='flex: 1; text-align: center;'>
+                                <span style='font-size: 12px; color: #94A3B8;'>AI 預估次交易日開盤</span>
+                                <div style='font-size: 18px; font-weight: bold; color: #38A169;'>{est_open:.2f}</div>
                             </div>
                         </div>
-                    </div>
-
-                    <div class='data-row' style='display: flex; background: #0F172A; padding: 15px; border-radius: 12px; color: white; margin-top: 15px; gap: 10px;'>
-                        <div style='flex: 1; text-align: center; border-right: 1px solid #334155;'>
-                            <span style='font-size: 12px; color: #94A3B8;'>籌碼修正</span>
-                            <div style='font-size: 18px; font-weight: bold;'>{bias:.3f}</div>
-                        </div>
-                        <div style='flex: 1; text-align: center; border-right: 1px solid #334155;'>
-                            <span style='font-size: 12px; color: #94A3B8;'>波動慣性</span>
-                            <div style='font-size: 18px; font-weight: bold; color: #FACC15;'>{vol_inertia:.2f}</div>
-                        </div>
-                        <div style='flex: 1; text-align: center;'>
-                            <span style='font-size: 12px; color: #94A3B8;'>預估開盤</span>
-                            <div style='font-size: 18px; font-weight: bold;'>{est_open:.2f}</div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                # --- 1. 計算漲跌點數與百分比 ---
-                price_diff = curr_c - prev_close  # 漲跌點數
-                price_change_pct = (price_diff / prev_close) * 100
-
-           
-                # --- 2. [動態變色邏輯] ---
-                price_color = "#C53030" if curr_c >= prev_close else "#2F855A" # 紅漲綠跌
-                price_change_pct = (curr_c - prev_close) / prev_close * 100
-
-               # --- [1. 機器學習個別回測：縮短至一個月數據優化版] ---
-                from sklearn.linear_model import LinearRegression
-                from sklearn.preprocessing import StandardScaler
-                from sklearn.metrics import r2_score, mean_absolute_error
-
-                # 僅取最近 30 筆資料 (約一個月)
-                df_ml = df.tail(30).copy() 
-                df_ml['Next_High'] = df_ml['High'].shift(-1)
-                df_ml = df_ml.dropna()
-
-                if len(df_ml) > 10: 
-                    features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
-                    X_ml = df_ml[features_ml]
-                    y_ml = df_ml['Next_High']
-
-                    # 建立標準化工具
-                    scaler_ml = StandardScaler()
-                    # 關鍵：定義 X_scaled
-                    X_scaled = scaler_ml.fit_transform(X_ml)
-                    
-                    # 訓練模型
-                    model_ml = LinearRegression()
-                    model_ml.fit(X_scaled, y_ml)
-
-                    # 計算這一個月內的回測準確度
-                    y_pred = model_ml.predict(X_scaled)
-                    stock_r2 = r2_score(y_ml, y_pred)
-                    stock_mae = mean_absolute_error(y_ml, y_pred)
-
-                    # 預測明日最高價 (使用最後一天的數據)
-                    latest_data = df[features_ml].tail(1)
-                    latest_scaled = scaler_ml.transform(latest_data)
-                    ml_tomorrow_high = model_ml.predict(latest_scaled)[0]
-                    
-                    # 對齊台股跳動單位
-                    ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
-                    ml_upside = ((ml_tomorrow_high / curr_c) - 1) * 100
-
-                # --- [顯示：機器學習個別標定報告 (亮底深字)] ---
-                    clean_name = name.split('(')[0].split('-')[0].strip()
-                    st.markdown(f"### 🤖 {clean_name} 的專屬 AI 機器學習回測")
-                    r2_eval = "極高" if stock_r2 > 0.9 else ("高" if stock_r2 > 0.8 else "中等")
-                    r2_color = "#059669" if stock_r2 > 0.8 else "#D97706"
-
-                    mc1, mc2, mc3 = st.columns(3)
-                    with mc1:
-                     st.markdown(f"""
-                        <div style="background:#FFFBEB; padding:20px; border-radius:12px; border:1px solid #FEF3C7; text-align:center;">
-                            <b style="color:#92400E; font-size:14px;">🎯 ML 預估最高價</b>
-                            <h2 style="color:#78350F; margin:10px 0;">{ml_tomorrow_high:.2f}</h2>
-                            <small style="color:#B45309;">預期空間: {ml_upside:.2f}%</small>
-                        </div>
                     """, unsafe_allow_html=True)
-                    with mc2:
-                     st.markdown(f"""
-                        <div style="background:#ECFDF5; padding:20px; border-radius:12px; border:1px solid #D1FAE5; text-align:center;">
-                            <b style="color:#065F46; font-size:14px;">📈 預測信心度 (R2)</b>
-                            <h2 style="color:{r2_color}; margin:10px 0;">{stock_r2:.4f}</h2>
-                            <small style="color:#059669;">準確度評價：{r2_eval}</small>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    with mc3:
-                     st.markdown(f"""
-                        <div style="background:#FDF2F2; padding:20px; border-radius:12px; border:1px solid #FEE2E2; text-align:center;">
-                            <b style="color:#9B1C1C; font-size:14px;">📏 平均預估誤差</b>
-                            <h2 style="color:#AF1919; margin:10px 0;">±{stock_mae:.2f}</h2>
-                            <small style="color:#C81E1E;">歷史平均偏離值</small>
-                        </div>
-                      """, unsafe_allow_html=True)
-
-                
-                    
-                
-
-                # --- 4. [命中率與卡片顯示區] ---
-                # 計算 60 日真實回測命中率 [cite: 2026-01-12]
-                acc_dh = calculate_real_accuracy(df, 0.85 * bias, 'high')
-                acc_dl = calculate_real_accuracy(df, 0.65 / bias, 'low')
-                acc_wh = calculate_real_accuracy(df, 1.9 * bias, 'high')
-                acc_wl = calculate_real_accuracy(df, 1.6 / bias, 'low')
-
-                st.divider()
-                st.markdown("### 🎯 隔日與五日 AI 預估區間 (60日回測)")
-                m1, m2, m3, m4 = st.columns(4)
-                with m1: stock_box("📈 隔日壓力", curr_c + atr*0.85*bias, ((curr_c + atr*0.85*bias)/curr_c - 1)*100, acc_dh, "red")
-                with m2: stock_box("📉 隔日支撐", curr_c - atr*0.65/bias, ((curr_c - atr*0.65/bias)/curr_c - 1)*100, acc_dl, "green")
-                with m3: stock_box("🚩 五日壓力", curr_c + atr*1.9*bias, ((curr_c + atr*1.9*bias)/curr_c - 1)*100, acc_wh, "red")
-                with m4: stock_box("⚓ 五日支撐", curr_c - atr*1.6/bias, ((curr_c - atr*1.6/bias)/curr_c - 1)*100, acc_wl, "green")
-
-                if not df.empty:
-                # --- [1. 基礎數據與財報評分] ---
-                 df = df.ffill()
-                 curr_c = float(df['Close'].iloc[-1])
-                 prev_close = float(df['Close'].iloc[-2])
-                 tick = get_tick_size(curr_c)
-                
-                # 新加入：財報影響力因子
-                 stock_info = yf.Ticker(f"{stock_id}.TW")
-                 f_score = 1.0
-                 try:
-                    info = stock_info.info
-                    margin = info.get('grossMargins', 0.2)
-                    rev_growth = info.get('revenueGrowth', 0)
-                    if margin > 0.3: f_score += 0.02
-                    if rev_growth > 0.1: f_score += 0.03
-                 except: 
-                     pass
-
-                # --- [2. 族群與 Bias 計算] ---
-                 relative_volume = df['Volume'].iloc[-1] / df['Volume'].tail(5).mean()
-                # 族群動能必須在 bias 之前計算
-                 sector_momentum = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
-                 sector_bias = 1 + (sector_momentum * 0.005)
-                
-                # 整合量能、族群與財報
-                 bias = (1 + (relative_volume - 1) * 0.015 + (sector_momentum * 0.002)) * f_score
-                 bias = max(0.97, min(1.04, bias)) 
-
-                # --- [3. 機器學習訓練數據準備] ---
-                # 解決 NameError: 確保 df_ml 在被使用前已完全定義且縮排正確
-                 df_ml = df.tail(30).copy() 
-                 df_ml['Next_High'] = df_ml['High'].shift(-1)
-                 df_ml = df_ml.dropna()
-
-                # 初始化預測值，避免後續顯示報錯
-                 ml_tomorrow_high = curr_c * 1.01 
-
-                if len(df_ml) > 10:
-                    from sklearn.linear_model import LinearRegression
-                    from sklearn.preprocessing import StandardScaler
-                    
-                    features_ml = ['Open', 'High', 'Low', 'Close', 'Volume']
-                    X_ml = df_ml[features_ml]
-                    y_ml = df_ml['Next_High']
-                    
-                    scaler_ml = StandardScaler()
-                    X_scaled = scaler_ml.fit_transform(X_ml)
-                    
-                    model_ml = LinearRegression()
-                    model_ml.fit(X_scaled, y_ml)
-                    
-                    # 預測明日最高價
-                    latest_data = df[features_ml].tail(1)
-                    latest_scaled = scaler_ml.transform(latest_data)
-                    # 預測值結合財報權重修正
-                    ml_tomorrow_high = model_ml.predict(latest_scaled)[0] * f_score
-                    ml_tomorrow_high = round(ml_tomorrow_high / tick) * tick
-
-
-               # --- 在你的 Streamlit UI 區塊 ---
-                with st.spinner('🏦 正在同步法人籌碼'):
-    # ✅ 接收 6 個變數
-                    c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
-
-# 判斷是否為今天
-                current_date = datetime.now().strftime('%Y-%m-%d')
-                is_today = str(chip_date) == current_date
-                date_display = f"🔴 {chip_date} (最新)" if is_today else f"⚪ {chip_date}"
-
-                st.subheader(f"📊 {stock_id} 三大法人籌碼監控")
-                st.caption(f"📅 資料日期：{date_display}")
-
-# 顯示 Metrics
-                c1, c2, c3, c4 = st.columns(4)
-                def c_color(v): return "normal" if v >= 0 else "inverse"
-
-                c1.metric("外資", f"{f_net:,.0f} 張", delta=f"{f_net:,.0f}", delta_color=c_color(f_net))
-                c2.metric("投信", f"{t_net:,.0f} 張", delta=f"{t_net:,.0f}", delta_color=c_color(t_net))
-                c3.metric("自營商", f"{d_net:,.0f} 張", delta=f"{d_net:,.0f}", delta_color=c_color(d_net))
-                c4.metric("合計", f"{net_lots:,.0f} 張", delta=f"{net_lots:,.0f}", delta_color=c_color(net_lots))
-
-# 3. 慣性診斷
-                st.info("🧬 **AI 波動慣性診斷**")
-                if t_net > 300: # 投信通常是波段指標
-                    chip_insight = f"🔥 **投信於 {chip_date} 積極鎖碼**，對股價具備強力支撐慣性。"
-                elif f_net < -1500: # 外資大賣通常有壓
-                    chip_insight = f"⚠️ **外資於 {chip_date} 顯著調節**，短期慣性恐受壓抑。"
-                elif net_lots > 1000: # 三大法人合力買超
-                    chip_insight = f"🚀 **法人合力偏多**，{chip_date} 籌碼呈現集結狀態。"
-                else:
-                    chip_insight = "⚖️ **籌碼動能中性**，目前法人並無明顯單向慣性。"
-                st.write(chip_insight)
-
-                st.markdown("---")
-
-                
-               
-
-                
-
-                # --- [4. AI 統整投資建議] ---
-                st.subheader("🎯 AI 全維度投資決策")
-                if relative_volume > 1.2 and sector_momentum > 0 and f_score > 1.0:
-                    st.success(f"🔥 **強烈看好**：量能、族群、財報三強鼎立，預期挑戰 {ml_tomorrow_high:.2f}")
-                elif relative_volume < 0.8:
-                    st.warning("💤 **冷清觀望**：目前量縮，缺乏主力介入。")
-                else:
-                    st.info("⚖️ **中性布局**：建議守住支撐位。")
-
-               
-
-               # --- 📈 走勢圖與 AI 預估區間 ---
-                st.divider()
-                st.markdown(f"### 📈 {name}({sym}) 走勢圖與 AI 預估區間")
-                
-                # 建立畫布
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), gridspec_kw={'height_ratios': [3, 1]}, sharex=True)
-                plot_df = df.tail(45)
-                
-                # 價格圖：顯示英文標籤避免亂碼
-                ax1.plot(plot_df.index, plot_df['Close'], color='#1f77b4', lw=3, label="Close Price")
-                ax1.axhline(curr_c + atr * 1.9 * bias, color='red', ls='--', lw=2, alpha=0.7, label="5D Resistance")
-                ax1.axhline(curr_c - atr * 1.6 / bias, color='green', ls='--', lw=2, alpha=0.7, label="5D Support")
-                
-                ax1.legend(loc='upper left', frameon=True, fontsize=10)
-                ax1.grid(alpha=0.3)
-                ax1.set_ylabel("Price")
-                
-                # 成交量柱狀圖
-                v_colors = ['#EF5350' if plot_df['Close'].iloc[i] >= plot_df['Open'].iloc[i] else '#26A69A' for i in range(len(plot_df))]
-                ax2.bar(plot_df.index, plot_df['Volume'], color=v_colors, alpha=0.8)
-                ax2.set_ylabel("Volume")
-                
-                plt.tight_layout()
-                st.pyplot(fig)
-                
-
-                # --- 🎯 補充說明註解 (根據您的指示強化) ---
-                # 取得執行當下的時間
-                # --- 🎯 AI 數據自動化偵測報告 (內容隨每日數據與日期變動) ---
-                
-                # 1. 定義時區與即時日期
-                tw_tz = pytz.timezone("Asia/Taipei") 
-                current_time = datetime.now(tw_tz)
-                current_date = current_time.strftime('%Y-%m-%d')
-                current_hm = current_time.strftime('%H:%M')
-
-                # 2. 判斷今日盤態：考慮漲停、過度下跌與籌碼修正
-                daily_change_pct = (curr_c - prev_close) / prev_close * 100
-
-                st.info(f"📋 **AI 數據自動化偵測報告 (分析基準日：{current_date} {current_hm})**")
-
-                # 3. 建立顯示欄位
-                note_col1, note_col2 = st.columns(2)
-
-                with note_col1:
-                    # 根據漲跌幅與籌碼修正量 (bias) 自動生成動態文字
-                    if daily_change_pct > 7 and bias > 1.05:
-                        status_text = "🔥 強勢攻擊盤 (多頭噴發)"
-                        status_desc = "今日漲幅極大且帶量，慣性已突破 ATR 常態區間。壓力位僅供參考，應注意乖離率。"
-                    elif daily_change_pct < -7 and bias > 1.05:
-                        status_text = "❄️ 恐慌下跌盤 (放量殺低)"
-                        status_desc = "偵測到過度下跌因素，下跌慣性強烈。支撐位可能失守，請謹慎接刀。"
-                    else:
-                        status_text = "帶量擴張" if bias > 1 else "量縮盤整"
-                        status_desc = f"目前籌碼修正係數為 {bias:.3f}，AI 已根據法人籌碼慣性自動調整空間。"
-
-                    st.markdown(f"""
-                    **1. 籌碼流向動態：**
-                    - 今日盤態：**{status_text}**
-                    - 說明：{status_desc}
-                    
-                    **2. 價格波動慣性 (Inertia)：**
-                    - 14 日 ATR 波動均幅：`{atr:.2f}`
-                    - 預估明日開盤慣性：`{est_open:.2f}` (隨每日數據動態計算)
-                    """)
-
-                with note_col2:
-                    # 根據 60 日回測命中率判定評等
-                    confidence_tag = "核心參考" if acc_dh > 85 else "謹慎參考 (波動異常)"
-                    
-                    st.markdown(f"""
-                    **3. 60 日歷史回測精度：**
-                    - 考慮「波動慣性」與「法人籌碼」後之真實命中率。
-                    - 過去 60 交易日維持了 **{acc_dh:.1f}%**，評等為：`{confidence_tag}`。
-                    
-                    **4. 空間參考範疇：**
-                    - 預計明日波動範圍約在 `{curr_c - atr*0.65/bias:.2f}` 至 `{curr_c + atr*0.85*bias:.2f}` 之間。
-                    """)
-
-                # 4. 底部自動日期聲明
-                st.caption(f"※ 本分析由 AI 於 {current_date} 根據 {name}({stock_id}) 最新數據自動生成。")
-
-                
-                st.warning("⚠️ **免責聲明**：本系統僅供 AI 數據研究參考，不構成任何投資建議。交易前請務必自行評估風險。")
-
-# --- B. 🆘 拯救套牢 (Rescue Module) 頁面 ---
-elif st.session_state.mode == "rescue":
-    st.title("🆘 拯救套牢診斷系統")
-    
-    if st.button("⬅️ 返回首頁"):
-        st.session_state.mode = "home"
-        st.rerun()
-    st.divider()
-
-    # --- 1. 輸入參數區 ---
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c1:
-        stock_id = st.text_input("輸入股票代號")
-    with c2:
-        cost_price = st.number_input("您的成本持有價", step=0.1)
-    with c3:
-        holding_qty = st.number_input("持有張數",  min_value=1)
-
-    if stock_id:
-        df, sym = fetch_stock_data(stock_id, period="120d")
-        if not df.empty:
-            df = df.ffill()
-            curr_p = float(df['Close'].iloc[-1])
-            name = get_stock_name(stock_id)
-            pnl_pct = (curr_p - cost_price) / cost_price * 100
-            tick = get_tick_size(curr_p)
-
-            # 抓取籌碼數據
-            c_score, net_lots, f_net, t_net, d_net, chip_date = fetch_finmind_chips(stock_id)
-
-            # --- 2. 損益現況儀表板 ---
-            st.subheader(f"📊 {name} 持股現況")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("目前股價", f"{curr_p:.2f}")
-            m2.metric("每股盈虧", f"{curr_p - cost_price:.2f}", delta=f"{pnl_pct:.2f}%", delta_color="inverse")
-            m3.metric("籌碼力道分數", f"{c_score:.3f}", help=">1.0 代表法人買超慣性強")
-
-            # --- 3. 雙方案策略區 ---
-            tab1, tab2 = st.tabs(["💰 方案一：攤平加碼建議", "⚖️ 方案二：無資金解套 (高拋低吸)"])
-
-            with tab1:
-                st.markdown("### 🎯 戰略攤平目標計算")
-                target_cost = st.slider("期望攤平後的平均成本", curr_p, cost_price, (curr_p + cost_price)/2)
-                
-                # 攤平公式：(現有張數*成本 + 新買張數*現價) / (現有+新買) = 目標成本
-                # 解出新買張數 = 現有張數 * (成本 - 目標) / (目標 - 現價)
-                if target_cost > curr_p:
-                    needed_qty = holding_qty * (cost_price - target_cost) / (target_cost - curr_p)
-                    needed_qty = round(needed_qty, 2)
-                    required_fund = needed_qty * curr_p * 1000
-                    
-                    st.success(f"💡 建議在 **{curr_p}** 附近加碼 **{needed_qty}** 張")
-                    st.write(f"💵 估計需準備資金：**{required_fund:,.0f}** 元")
-                    st.info(f"📍 最佳加碼點位：建議參考私募支撐區或季線 (60MA) 附近。")
-                else:
-                    st.warning("目標成本過低，技術上難以達成，請重新調整滑桿。")
-
-            with tab2:
-                st.markdown("### 🔄 無籌碼高拋低吸戰術")
-                # 計算壓力與支撐 (利用 ATR 波動)
-                tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift(1)), abs(df['Low']-df['Close'].shift(1))))
-                atr = tr.rolling(14).mean().iloc[-1]
-                
-                # 定義區間
-                resistance = round((curr_p + atr * 1.5) / tick) * tick
-                support = round((curr_p - atr * 1.2) / tick) * tick
-                
-                st.write("當前資金流向顯示：", "🔴 法人賣壓中" if c_score < 1.0 else "🟢 法人守護中")
-                
-                col_s1, col_s2 = st.columns(2)
-                with col_s1:
-                    st.error(f"⬆️ **壓力區 (高拋點)：{resistance:.2f}**")
-                    st.write("觸及此價位建議：賣出部分持股 (如 1/4)，等待拉回。")
-                with col_s2:
-                    st.success(f"⬇️ **支撐區 (低吸點)：{support:.2f}**")
-                    st.write("觸及此價位建議：買回之前賣出的股數，賺取價差。")
-
-                # 進階建議
-                if c_score > 1.03:
-                    st.info("🔥 **AI 提示：** 法人買超強勁，高拋點可適度上修，不急著賣。")
-                elif c_score < 0.97:
-                    st.warning("⚠️ **AI 提示：** 法人持續出貨，反彈壓力區請務必執行減碼。")
-
-                # 繪製解套地圖
-                st.write("📈 **持股解套地圖 (120日走勢)**")
-                fig, ax = plt.subplots(figsize=(10, 4))
-                ax.plot(df.index, df['Close'], label='Price', color='#1f77b4')
-                ax.axhline(y=cost_price, color='red', linestyle='--', label='Your Cost ')
-                ax.axhline(y=resistance, color='orange', linestyle=':', label='Resistance')
-                ax.axhline(y=support, color='green', linestyle=':', label='Support')
-                ax.fill_between(df.index, support, resistance, color='gray', alpha=0.1)
-                ax.legend()
-                st.pyplot(fig)
-
-        else:
-            st.error("無法抓取股票數據，請確認代碼是否正確。")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
