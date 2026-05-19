@@ -22,10 +22,10 @@ st.set_page_config(page_title="台股 AI 交易助手 Pro", layout="wide", page_
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
 
 def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
-    import requests
-    import pandas as pd
-    from datetime import datetime, timedelta
-
+    import requests
+    import pandas as pd
+    from datetime import datetime, timedelta
+  
     # 預設回傳
     default_res = (1.0, 0.0, 0.0, 0.0, 0.0, "API 維護中")
     pure_id = str(stock_id).split('.')[0]
