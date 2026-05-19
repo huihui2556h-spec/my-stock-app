@@ -122,7 +122,6 @@ def fetch_stock_data(stock_id, period="120d"):
                 df.columns = [c.strip() for c in df.columns]
                 df = df.dropna(subset=['Close'])
                 return df, symbol
-            }
         except:
             continue
     return pd.DataFrame(), None
