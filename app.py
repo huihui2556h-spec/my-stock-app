@@ -13,12 +13,12 @@ import matplotlib
 
 # --- [全域初始化與網頁設定] ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-st.set_page_config(page_title="台股 AI 交易助手 Pro - 紀律方向版", layout="wide", page_icon="💹")
+st.set_page_config(page_title="台股 AI 交易助手 Pro - 終極全功能版", layout="wide", page_icon="💹")
 
 # 設定時區
 tw_tz = pytz.timezone("Asia/Taipei")
 
-# --- [字體防亂碼全英設定] ---
+# --- [圖表全英設定：防止因中文字體缺失導致圖例註解不見] ---
 matplotlib.rcParams['axes.unicode_minus'] = False 
 
 # 預測紀錄檔路徑
@@ -298,7 +298,6 @@ elif st.session_state.mode == "forecast":
                 if k_momentum > 0 and chip_flow >= 0:
                     pred_direction = "📈 隔日看漲 (動能增強，法人籌碼偏多)"
                     direction_color = "#F59E0B"
-                    # 看漲時，預期震盪中線往上移
                     center_price = curr_c + (tick * 2)
                 elif k_momentum < 0 and chip_flow <= 0:
                     pred_direction = "📉 隔日看跌 (結構轉弱，法人籌碼調節)"
@@ -310,17 +309,15 @@ elif st.session_state.mode == "forecast":
                     center_price = curr_c
 
                 # ------【核心升級 2：縮減至 1日合理交易標準差範圍】------
-                # 使用近 20 日的每日對數收益率標準差，換算成精準的 1 日震盪區間
                 df['Return'] = np.log(df['Close'] / df['Close'].shift(1))
                 daily_std_pct = df['Return'].tail(20).std()
                 
-                # 1個標準差能覆蓋約 68% 的日常變動，避免直接跳到漲跌停
+                # 使用 1 日震盪標準差
                 expected_range = curr_c * daily_std_pct * 1.0 
                 
                 final_next_low = round((center_price - expected_range) / tick) * tick
                 final_next_high = round((center_price + expected_range) / tick) * tick
                 
-                # 防呆：避免最高與最低重疊
                 if final_next_low >= curr_c: final_next_low = curr_c - tick
                 if final_next_high <= curr_c: final_next_high = curr_c + tick
 
@@ -349,17 +346,15 @@ elif st.session_state.mode == "forecast":
                 final_target_min = round(target_low / tick) * tick
                 final_target_max = round(target_high / tick) * tick
 
-                # --- 介面呈現 (全面修復高對比深色漸層背景，字體 100% 清晰) ---
+                # --- 介面呈現 (高對比深色漸層背景，字體 100% 清晰) ---
                 st.markdown(f"""
                     <div style='background: #1E293B; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.15);'>
                         <h2 style='color: #FFFFFF; margin: 0; font-size: 22px;'>{name} ({stock_id}) 今日收盤價：{curr_c:.2f} ({'▲' if price_diff >= 0 else '▼'}{abs(price_diff):.2f})</h2>
                     </div>
                 """, unsafe_allow_html=True)
 
-                # 看板 1：隔日精準方向與戰術區間
                 st.markdown("### ⚡ 短線戰術：隔日預測方向與合理觸及區間")
                 
-                # 方向顯示大卡片
                 st.markdown(f"""
                     <div style="background: #0F172A; padding: 20px; border-radius: 12px; border: 1px solid {direction_color}; margin-bottom: 15px;">
                         <span style="font-size: 14px; color: #94A3B8; font-weight: bold;">🔮 AI 綜合量價籌碼判定隔日方向</span>
@@ -367,7 +362,6 @@ elif st.session_state.mode == "forecast":
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # 精準高低點數字卡片
                 cc1, cc2 = st.columns(2)
                 with cc1: 
                     st.markdown(f"""
@@ -384,8 +378,7 @@ elif st.session_state.mode == "forecast":
                         </div>
                     """, unsafe_allow_html=True)
 
-                # 看板 2：未來中長期波段目標
-                st.markdown("### 🎯 中長線戰略：波段推算目標滿足區間")
+                st.markdown("### 🎯 中長線戰術：波段推算目標滿足區間")
                 st.markdown(f"""
                     <div style="background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%); padding: 25px; border-radius: 16px; color: white; box-shadow: 0 6px 15px rgba(0,0,0,0.15);">
                         <span style="font-size: 14px; color: #93C5FD; font-weight: bold;">🎯 中線未來滿足點估算範圍</span>
@@ -394,25 +387,32 @@ elif st.session_state.mode == "forecast":
                     </div>
                 """, unsafe_allow_html=True)
 
-                # 每日紀律存檔按鈕
                 st.divider()
                 st.markdown("### 💾 執行每日紀律預測存檔")
                 if st.button("📥 記錄今日預測與方向（納入勝率計算）", use_container_width=True):
                     save_prediction(stock_id, name, curr_c, pred_direction, final_next_low, final_next_high)
                     st.success(f"🎉 成功存檔！已將 {name} 今日預測範圍與方向紀錄至歷史資料庫中。")
 
-                # 繪圖
+                # --- [修復圖表：全英 Labels 確保圖例 Legend 註解 100% 現形不消失] ---
                 st.divider()
-                st.subheader("📈 技術指標與趨勢波浪軌道追蹤 (全英圖例)")
+                st.subheader("📈 技術指標與趨勢波浪軌道追蹤 (全英註解防崩潰)")
                 plot_df = df.tail(100)
                 fig, ax = plt.subplots(figsize=(11, 4.5))
+                
+                # 繪製主線與軌道
                 ax.plot(plot_df.index, plot_df['Close'], label='Close Price', color='#1E293B', linewidth=2)
                 ax.plot(plot_df.index, plot_df['BB_MA'], label='BB Middle (20 MA)', color='#3B82F6', linestyle='--')
                 ax.plot(plot_df.index, plot_df['BB_Upper'], label='BB Upper (2 Std)', color='#EF4444', alpha=0.6)
                 ax.plot(plot_df.index, plot_df['BB_Lower'], label='BB Lower (2 Std)', color='#10B981', alpha=0.6)
+                
+                # 標註高低波段點與波浪向量
                 ax.scatter(p_min_idx, wave_low, color='#10B981', s=120, marker='^', label='100D Wave Low Base')
                 ax.scatter(p_max_idx, wave_high, color='#EF4444', s=120, marker='v', label='100D Wave High Peak')
-                ax.set_title(f"{stock_id} Wave Trend Dashboard", fontsize=10, fontweight='bold')
+                ax.plot([p_min_idx, p_max_idx], [wave_low, wave_high], color='#F59E0B', linestyle=':', linewidth=2, label='Wave Vector')
+                
+                ax.set_title(f"{stock_id} Bollinger Bands & Elliott Wave Dashboard", fontsize=10, fontweight='bold')
+                
+                # 核心：顯示圖例註解（Legend）
                 ax.legend(loc='upper left', fontsize=8)
                 ax.grid(True, linestyle=':', alpha=0.5)
                 st.pyplot(fig)
@@ -440,11 +440,9 @@ elif st.session_state.mode == "backtest":
             df_display.columns = ["預測日期", "股票代碼", "股票名稱", "預測基準價", "預判隔日方向", "預估隔日最低", "預估隔日最高", "實際隔日最低", "實際隔日最高", "開獎結果"]
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-# --- ...（其餘類群輪動 sector 與拯救套牢 rescue 程式碼皆保留不變，與上一版本一致）...
-
-# --- 【SECTOR：類群輪動預警頁面】 ---
+# --- 【SECTOR：類群輪動預警頁面 (完整保留)】 ---
 elif st.session_state.mode == "sector":
-    st.title("💎 類群輪動預警儀表板")
+    st.title("💎 類群輪動大戶預警儀表板")
     if st.button("⬅️ 返回首頁"): st.session_state.mode = "home"; st.rerun()
     st.divider()
     
@@ -454,11 +452,13 @@ elif st.session_state.mode == "sector":
             try:
                 data = yf.download(tickers, period="10d", progress=False)
                 if not data.empty:
-                    if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
+                    if isinstance(data.columns, pd.MultiIndex): 
+                        data.columns = data.columns.get_level_values(0)
                     ret = (data['Close'].iloc[-1] / data['Close'].iloc[-2] - 1).mean() * 100
                     vol_ratio = data['Volume'].iloc[-1].sum() / data['Volume'].tail(5).mean().sum()
                     flow_report.append({"ID": en_id, "漲跌%": ret, "資金流入": vol_ratio})
-            except: continue
+            except: 
+                continue
         
         df_flow = pd.DataFrame(flow_report)
         if not df_flow.empty:
@@ -476,15 +476,18 @@ elif st.session_state.mode == "sector":
                             s_h = yf.Ticker(ticker).history(period="2d")
                             if len(s_h) >= 2:
                                 s_ret = (s_h['Close'].iloc[-1] / s_h['Close'].iloc[-2] - 1) * 100
-                                with s_cols[idx]: st.metric(label=s_name, value=f"{s_h['Close'].iloc[-1]:.2f}", delta=f"{s_ret:.2f}%")
-                        except: continue
+                                with s_cols[idx]: 
+                                    st.metric(label=s_name, value=f"{s_h['Close'].iloc[-1]:.2f}", delta=f"{s_ret:.2f}%")
+                        except: 
+                            continue
             
             st.divider()
             df_display = df_flow.copy()
             df_display['產業名稱'] = df_display['ID'].map(name_map)
-            st.dataframe(df_display[['產業名稱', '漲跌%', '資金流入']].sort_values(by='資金流入', ascending=False), use_container_width=True, hide_index=True)
+            df_display.columns = ['ID', '漲跌幅百分比', '大戶資金流入比率', '細分產業名稱']
+            st.dataframe(df_display[['細分產業名稱', '漲跌幅百分比', '大戶資金流入比率']].sort_values(by='大戶資金流入比率', ascending=False), use_container_width=True, hide_index=True)
 
-# --- 【RESCUE：拯救套牢診斷頁面】 ---
+# --- 【RESCUE：拯救套牢診斷頁面 (完整保留)】 ---
 elif st.session_state.mode == "rescue":
     st.title("🆘 拯救套牢診斷艙")
     if st.button("⬅️ 返回首頁"): st.session_state.mode = "home"; st.rerun()
@@ -494,18 +497,22 @@ elif st.session_state.mode == "rescue":
         r_id = st.text_input("請輸入套牢股票代碼：")
         r_cost = st.number_input("您的買進持股成本價：", min_value=0.0, step=0.1)
     with col_r2:
-        r_volume = st.number_input("持有張數 (張)：", min_value=0, step=1)
+        r_volume = st.number_input("持有張數 (張) [不含股利]：", min_value=0, step=1)
         
     if r_id and r_cost > 0 and r_volume > 0:
         df, sym = fetch_stock_data(r_id, period="100d")
         if not df.empty:
-            df = df.ffill(); curr_p = float(df['Close'].iloc[-1]); loss_pct = ((curr_p - r_cost) / r_cost) * 100
+            df = df.ffill()
+            curr_p = float(df['Close'].iloc[-1])
+            loss_pct = ((curr_p - r_cost) / r_cost) * 100
             st.subheader("📊 庫存損益現狀診斷")
-            if loss_pct >= 0: st.success(f"🎉 帳面目前為獲利狀態！報酬率：+{loss_pct:.2f}%")
+            if loss_pct >= 0: 
+                st.success(f"🎉 帳面目前為獲利狀態！報酬率：+{loss_pct:.2f}%")
             else:
                 st.error(f"❌ 目前處於套牢狀態。報酬率：{loss_pct:.2f}% (現價：{curr_p:.2f})")
-                support_p = df['Low'].tail(20).min(); resistance_p = df['High'].tail(20).max()
-                st.markdown(f"> **⚠️ 技術面提示**：支撐位 <b style='color:#28A745;'>{support_p:.2f}</b> ｜ 解套壓力位 <b style='color:#DC3545;'>{resistance_p:.2f}</b>", unsafe_allow_html=True)
+                support_p = df['Low'].tail(20).min()
+                resistance_p = df['High'].tail(20).max()
+                st.markdown(f"> **⚠️ 技術面提示**：近20日低點支撐位 <b style='color:#28A745;'>{support_p:.2f}</b> ｜ 近20日高點壓力位 <b style='color:#DC3545;'>{resistance_p:.2f}</b>", unsafe_allow_html=True)
                 
                 st.divider()
                 add_shares = st.slider("預計加碼買進張數 (張)：", min_value=1, max_value=r_volume * 3, value=r_volume)
@@ -513,5 +520,7 @@ elif st.session_state.mode == "rescue":
                 new_loss_pct = ((curr_p - new_cost) / new_cost) * 100
                 
                 c_m1, c_m2 = st.columns(2)
-                with c_m1: st.metric(label="攤平後平均成本價", value=f"{new_cost:.2f}", delta=f"成本降低 {r_cost - new_cost:.2f}")
-                with c_m2: st.metric(label="攤平後預估新報酬率", value=f"{new_loss_pct:.2f}%", delta=f"風險縮減 {abs(loss_pct) - abs(new_loss_pct):.2f}%")
+                with c_m1: 
+                    st.metric(label="攤平後平均成本價", value=f"{new_cost:.2f}", delta=f"成本降低 {r_cost - new_cost:.2f}")
+                with c_m2: 
+                    st.metric(label="攤平後預估新報酬率", value=f"{new_loss_pct:.2f}%", delta=f"風險縮減 {abs(loss_pct) - abs(new_loss_pct):.2f}%")
