@@ -13,7 +13,7 @@ import matplotlib
 
 # --- [全域初始化與網頁設定] ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-st.set_page_config(page_title="台股 AI 交易助手 Pro - 終極全功能版", layout="wide", page_icon="💹")
+st.set_page_config(page_title="台股 AI 交易助手 Pro - 修正穩定版", layout="wide", page_icon="💹")
 
 # 設定時區
 tw_tz = pytz.timezone("Asia/Taipei")
@@ -32,7 +32,7 @@ name_map = {
     "Memory-Fab": "記憶體-原廠/代工", "Memory-Module": "記憶體-模組廠", "Memory-Controller": "記憶體-控制 IC", "Memory-DDR5": "記憶體-DDR5/高速傳輸",
     "Semi-Equip": "半導體-設備/CoWoS", "Semi-OSAT": "半導體-封測 (先進封裝/測試)", "AI-ASIC": "AI 特用晶片 (矽智財/ASIC)",
     "AI-Case": "AI 伺服器 (機殼/滑軌)", "AI-Cooling": "AI 伺服器 (散熱/水冷)", "AI-ODM": "AI 伺服器 (ODM 代工)",
-    "CPO-Silicon": "矽光子 (CPO/光通訊)", "Satellite-LEO": "低軌衛星 (航太/地面站)", "Display-Panel": "面板-驅動 IC/面板廠",
+    "CPO-Silicon": "矽光子 (CPO/光通訊)", "Satellite-LEO": "低軌衛星 (航太/地面站)", "Display-Panel": "面板-驱动 IC/面板厂",
     "Passive-Comp": "被動元件 (MLCC/電阻)", "Optical-Lens": "光學鏡頭 (手機/車載)", "Auto-EV": "車用電子 (電動車/二極體)",
     "Power-Grid": "重電/電力 (政策股)", "Shipping": "航運 (貨櫃/散裝)"
 }
@@ -168,7 +168,7 @@ def update_and_calculate_accuracy():
                         df_db.at[idx, 'actual_next_low'] = round(act_low, 2)
                         df_db.at[idx, 'actual_next_high'] = round(act_high, 2)
                         
-                        # 命中定義：實際價格區間有覆蓋到預估的精準震盪值
+                        # 歷史命中回測定義：實際回測數據比對
                         if (act_high >= row['pred_next_low']) and (act_low <= row['pred_next_high']):
                             df_db.at[idx, 'is_hit'] = "Hit (成功)"
                         else:
@@ -337,7 +337,7 @@ elif st.session_state.mode == "forecast":
                 if p_min_idx < p_max_idx:
                     target_low = wave_low + (wave_height * 1.382)
                     target_high = wave_low + (wave_height * 1.618)
-                    trend_status = "📈 多頭結構：主升段推升，突破前高後之未來擴展波段目標點。"
+                    trend_status = "📈 多頭結構：主升段推推升，突破前高後之未來擴展波段目標點。"
                 else:
                     target_low = wave_low + (wave_height * 0.382)
                     target_high = wave_low + (wave_height * 0.618)
@@ -393,26 +393,21 @@ elif st.session_state.mode == "forecast":
                     save_prediction(stock_id, name, curr_c, pred_direction, final_next_low, final_next_high)
                     st.success(f"🎉 成功存檔！已將 {name} 今日預測範圍與方向紀錄至歷史資料庫中。")
 
-                # --- [修復圖表：全英 Labels 確保圖例 Legend 註解 100% 現形不消失] ---
                 st.divider()
                 st.subheader("📈 技術指標與趨勢波浪軌道追蹤 (全英註解防崩潰)")
                 plot_df = df.tail(100)
                 fig, ax = plt.subplots(figsize=(11, 4.5))
                 
-                # 繪製主線與軌道
                 ax.plot(plot_df.index, plot_df['Close'], label='Close Price', color='#1E293B', linewidth=2)
                 ax.plot(plot_df.index, plot_df['BB_MA'], label='BB Middle (20 MA)', color='#3B82F6', linestyle='--')
                 ax.plot(plot_df.index, plot_df['BB_Upper'], label='BB Upper (2 Std)', color='#EF4444', alpha=0.6)
                 ax.plot(plot_df.index, plot_df['BB_Lower'], label='BB Lower (2 Std)', color='#10B981', alpha=0.6)
                 
-                # 標註高低波段點與波浪向量
                 ax.scatter(p_min_idx, wave_low, color='#10B981', s=120, marker='^', label='100D Wave Low Base')
                 ax.scatter(p_max_idx, wave_high, color='#EF4444', s=120, marker='v', label='100D Wave High Peak')
                 ax.plot([p_min_idx, p_max_idx], [wave_low, wave_high], color='#F59E0B', linestyle=':', linewidth=2, label='Wave Vector')
                 
                 ax.set_title(f"{stock_id} Bollinger Bands & Elliott Wave Dashboard", fontsize=10, fontweight='bold')
-                
-                # 核心：顯示圖例註解（Legend）
                 ax.legend(loc='upper left', fontsize=8)
                 ax.grid(True, linestyle=':', alpha=0.5)
                 st.pyplot(fig)
@@ -436,8 +431,23 @@ elif st.session_state.mode == "backtest":
                 </div>
             """, unsafe_allow_html=True)
             
+            # 【關鍵修復點】：改用字典 mapping（.rename）方式安全地改欄位名，完美避開數量不對稱噴錯誤的問題！
             df_display = df_db.copy().sort_values(by="prediction_date", ascending=False)
-            df_display.columns = ["預測日期", "股票代碼", "股票名稱", "預測基準價", "預判隔日方向", "預估隔日最低", "預估隔日最高", "實際隔日最低", "實際隔日最高", "開獎結果"]
+            
+            rename_dict = {
+                "prediction_date": "預測日期",
+                "stock_id": "股票代碼",
+                "stock_name": "股票名稱",
+                "base_price": "預測基準價",
+                "pred_direction": "預判隔日方向",
+                "pred_next_low": "預估隔日最低",
+                "pred_next_high": "預估隔日最高",
+                "actual_next_low": "實際隔日最低",
+                "actual_next_high": "實際隔日最高",
+                "is_hit": "開獎結果"
+            }
+            
+            df_display = df_display.rename(columns=rename_dict)
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
 # --- 【SECTOR：類群輪動預警頁面 (完整保留)】 ---
