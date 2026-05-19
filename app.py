@@ -13,7 +13,7 @@ import matplotlib
 
 # --- [全域初始化與網頁設定] ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-st.set_page_config(page_title="台股 AI 交易助手 Pro - 全功能回測版", layout="wide", page_icon="💹")
+st.set_page_config(page_title="台股 AI 交易助手 Pro - 紀律方向版", layout="wide", page_icon="💹")
 
 # 設定時區
 tw_tz = pytz.timezone("Asia/Taipei")
@@ -95,14 +95,38 @@ def fetch_stock_data(stock_id, period="150d"):
             continue
     return pd.DataFrame(), None
 
+def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
+    """抓取三大法人籌碼，用來輔助預測隔日多空方向"""
+    pure_id = str(stock_id).split('.')[0]
+    try:
+        url = "https://api.finmindtrade.com/api/v4/data"
+        start_dt = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d')
+        params = {"dataset": "InstitutionalInvestorsBuySell", "data_id": f"{pure_id}.TW", "start_date": start_dt, "token": token}
+        resp = requests.get(url, params=params, timeout=5, verify=False)
+        if resp.status_code == 200:
+            data = resp.json().get('data', [])
+            if data:
+                df = pd.DataFrame(data)
+                last_date = df['date'].max()
+                today_df = df[df['date'] == last_date]
+                col = 'name' if 'name' in df.columns else 'type'
+                def get_v(k):
+                    r = today_df[today_df[col].str.contains(k, case=False, na=False)]
+                    return (r['buy'].sum() - r['sell'].sum()) / 1000 if not r.empty else 0.0
+                return get_v('Foreign') + get_v('Trust') + get_v('Dealer')
+    except:
+        pass
+    return 0.0
+
 # --- [歷史預測資料庫核心邏輯] ---
-def save_prediction(stock_id, stock_name, current_price, pred_low, pred_high):
+def save_prediction(stock_id, stock_name, current_price, pred_direction, pred_low, pred_high):
     today_str = datetime.now(tw_tz).strftime("%Y-%m-%d")
     new_data = pd.DataFrame([{
         "prediction_date": today_str,
         "stock_id": stock_id,
         "stock_name": stock_name,
         "base_price": round(current_price, 2),
+        "pred_direction": pred_direction,
         "pred_next_low": round(pred_low, 2),
         "pred_next_high": round(pred_high, 2),
         "actual_next_low": np.nan,
@@ -144,6 +168,7 @@ def update_and_calculate_accuracy():
                         df_db.at[idx, 'actual_next_low'] = round(act_low, 2)
                         df_db.at[idx, 'actual_next_high'] = round(act_high, 2)
                         
+                        # 命中定義：實際價格區間有覆蓋到預估的精準震盪值
                         if (act_high >= row['pred_next_low']) and (act_low <= row['pred_next_high']):
                             df_db.at[idx, 'is_hit'] = "Hit (成功)"
                         else:
@@ -175,7 +200,7 @@ if st.session_state.mode == "home":
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("⚡ 盤中即時量價 (當沖監控)", use_container_width=True): st.session_state.mode = "realtime"; st.rerun()
-        if st.button("🔮 隔日區間預估 與 紀律存檔", use_container_width=True): st.session_state.mode = "forecast"; st.rerun()
+        if st.button("🔮 隔日方向預估 與 未來波段艙門", use_container_width=True): st.session_state.mode = "forecast"; st.rerun()
     with col_b:
         if st.button("💎 類群輪動大戶預警", use_container_width=True): st.session_state.mode = "sector"; st.rerun()
         if st.button("🆘 拯救套牢診斷艙", use_container_width=True): st.session_state.mode = "rescue"; st.rerun()
@@ -216,8 +241,8 @@ elif st.session_state.mode == "realtime":
             instant_vol_factor = df['Volume'].iloc[-1] / avg_vol if avg_vol > 0 else 1.0
 
             st.markdown(f"""
-                <div style='background: #FFFFFF; padding: 25px; border-radius: 18px; border-left: 12px solid {active_color}; border: 1px solid #E2E8F0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px;'>
-                    <div style='color: #0F172A; font-size: 28px; font-weight: 800;'>{name} ({sym})</div>
+                <div style='background: #1E293B; padding: 25px; border-radius: 18px; border-left: 12px solid {active_color}; box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin-bottom: 20px;'>
+                    <div style='color: #FFFFFF; font-size: 28px; font-weight: 800;'>{name} ({sym})</div>
                     <div style='display: flex; align-items: baseline; flex-wrap: wrap; margin-top:10px;'>
                         <b style='font-size: 70px; color: {active_color}; line-height: 1;'>{curr_price:.2f}</b>
                         <div style='margin-left: 15px;'>
@@ -242,41 +267,64 @@ elif st.session_state.mode == "realtime":
 
             st.subheader("🎯 當沖 AI 動態演算建議")
             d1, d2, d3 = st.columns(3)
-            with d1: st.markdown(f"<div style='background:#F0F9FF; padding:20px; border-radius:12px; text-align:center;'><b>🔹 動態支撐買點</b><h2>{buy_point:.2f}</h2></div>", unsafe_allow_html=True)
-            with d2: st.markdown(f"<div style='background:#FFF5F5; padding:20px; border-radius:12px; text-align:center;'><b>🔴 動態壓力賣點</b><h2>{sell_target:.2f}</h2></div>", unsafe_allow_html=True)
-            with d3: st.markdown(f"<div style='background:#F0FFF4; padding:20px; border-radius:12px; text-align:center;'><b>📈 預期報酬範圍</b><h2>{expected_return:.2f}%</h2></div>", unsafe_allow_html=True)
+            with d1: st.markdown(f"<div style='background:#1E3A8A; color:white; padding:20px; border-radius:12px; text-align:center;'><b>🔹 動態支撐買點</b><h2 style='color:#60A5FA;'>{buy_point:.2f}</h2></div>", unsafe_allow_html=True)
+            with d2: st.markdown(f"<div style='background:#7F1D1D; color:white; padding:20px; border-radius:12px; text-align:center;'><b>🔴 動態壓力賣點</b><h2 style='color:#FCA5A5;'>{sell_target:.2f}</h2></div>", unsafe_allow_html=True)
+            with d3: st.markdown(f"<div style='background:#064E3B; color:white; padding:20px; border-radius:12px; text-align:center;'><b>📈 預期報酬範圍</b><h2 style='color:#34D399;'>{expected_return:.2f}%</h2></div>", unsafe_allow_html=True)
 
-# --- 【FORECAST：隔日區間預估 與 未來中長期波段 頁面】 ---
+# --- 【FORECAST：隔日精準方向 與 未來中長期波段 頁面】 ---
 elif st.session_state.mode == "forecast":
     if st.button("⬅️ 返回首頁"): st.session_state.mode = "home"; st.rerun()
         
-    st.title("🔮 波段未來目標價預估 與 隔日極端區間")
-    stock_id = st.text_input("請輸入股票代碼（如：2330, 2408, 8358）")
+    st.title("🔮 隔日精準多空方向預測 與 未來目標價區間")
+    stock_id = st.text_input("請輸入股票代碼（如：2330, 2408, 4977, 8358）")
 
     if stock_id:
-        with st.spinner('AI 正在計算波段擴展滿足點與隔日波動區間...'):
+        with st.spinner('AI 正在融合K線動能、法人籌碼與波動度演算中...'):
             df, sym = fetch_stock_data(stock_id, period="150d")
             
             if not df.empty:
                 df = df.ffill()
                 name = get_stock_name(stock_id)
                 curr_c = float(df['Close'].iloc[-1])
-                prev_close = float(df['Close'].iloc[-2])
-                price_diff = curr_c - prev_close
-                active_color = "#E53E3E" if price_diff >= 0 else "#38A169"
+                prev_c = float(df['Close'].iloc[-2])
+                price_diff = curr_c - prev_c
+                active_color = "#EF4444" if price_diff >= 0 else "#10B981"
                 tick = get_tick_size(curr_c)
                 
-                # ------【1. 隔日短線波動演算 (ATR模型)】------
-                df['TR'] = np.maximum(df['High'] - df['Low'], 
-                                      np.maximum(abs(df['High'] - df['Close'].shift(1)), 
-                                                 abs(df['Low'] - df['Close'].shift(1))))
-                df['ATR_5'] = df['TR'].rolling(window=5).mean()
-                current_atr = df['ATR_5'].iloc[-1] if not pd.isna(df['ATR_5'].iloc[-1]) else (df['High'].iloc[-5:] - df['Low'].iloc[-5:]).mean()
+                # ------【核心升級 1：隔日多空方向預判邏輯】------
+                chip_flow = fetch_finmind_chips(stock_id) # 引入 FinMind 籌碼
+                k_momentum = curr_c - df['Close'].shift(3).iloc[-1] # 近3日價格動量
                 
-                final_next_low = round((curr_c - current_atr * 1.1) / tick) * tick
-                final_next_high = round((curr_c + current_atr * 1.1) / tick) * tick
+                if k_momentum > 0 and chip_flow >= 0:
+                    pred_direction = "📈 隔日看漲 (動能增強，法人籌碼偏多)"
+                    direction_color = "#F59E0B"
+                    # 看漲時，預期震盪中線往上移
+                    center_price = curr_c + (tick * 2)
+                elif k_momentum < 0 and chip_flow <= 0:
+                    pred_direction = "📉 隔日看跌 (結構轉弱，法人籌碼調節)"
+                    direction_color = "#38BDF8"
+                    center_price = curr_c - (tick * 2)
+                else:
+                    pred_direction = "⏳ 隔日震盪 (多空交尾，建議區間低吸高拋)"
+                    direction_color = "#A78BFA"
+                    center_price = curr_c
 
-                # ------【2. 中長期波段目標價 (黃金分割擴展模型)】------
+                # ------【核心升級 2：縮減至 1日合理交易標準差範圍】------
+                # 使用近 20 日的每日對數收益率標準差，換算成精準的 1 日震盪區間
+                df['Return'] = np.log(df['Close'] / df['Close'].shift(1))
+                daily_std_pct = df['Return'].tail(20).std()
+                
+                # 1個標準差能覆蓋約 68% 的日常變動，避免直接跳到漲跌停
+                expected_range = curr_c * daily_std_pct * 1.0 
+                
+                final_next_low = round((center_price - expected_range) / tick) * tick
+                final_next_high = round((center_price + expected_range) / tick) * tick
+                
+                # 防呆：避免最高與最低重疊
+                if final_next_low >= curr_c: final_next_low = curr_c - tick
+                if final_next_high <= curr_c: final_next_high = curr_c + tick
+
+                # ------【3. 中長期波段目標價 (黃金分割擴展模型)】------
                 df['BB_MA'] = df['Close'].rolling(window=20).mean()
                 df['BB_STD'] = df['Close'].rolling(window=20).std()
                 df['BB_Upper'] = df['BB_MA'] + (2 * df['BB_STD'])
@@ -292,7 +340,7 @@ elif st.session_state.mode == "forecast":
                 if p_min_idx < p_max_idx:
                     target_low = wave_low + (wave_height * 1.382)
                     target_high = wave_low + (wave_height * 1.618)
-                    trend_status = "📈 多頭結構：主升段推升，突破前高後之未來擴展波段目標。"
+                    trend_status = "📈 多頭結構：主升段推升，突破前高後之未來擴展波段目標點。"
                 else:
                     target_low = wave_low + (wave_height * 0.382)
                     target_high = wave_low + (wave_height * 0.618)
@@ -300,40 +348,58 @@ elif st.session_state.mode == "forecast":
 
                 final_target_min = round(target_low / tick) * tick
                 final_target_max = round(target_high / tick) * tick
-                if final_target_min == final_target_max: final_target_max += tick
 
-                # 歷史軌道覆蓋率
-                hit_counts = sum(1 for i in range(len(df) - 100, len(df)) if df['BB_Lower'].iloc[i] <= df['Close'].iloc[i] <= df['BB_Upper'].iloc[i])
-                bb_accuracy = (hit_counts / 100) * 100
-
-                # --- 介面呈現 ---
+                # --- 介面呈現 (全面修復高對比深色漸層背景，字體 100% 清晰) ---
                 st.markdown(f"""
-                    <div style='background: #FFFFFF; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.05);'>
-                        <h2 style='color: #1E293B; margin: 0; font-size: 22px;'>{name} ({stock_id}) 今日收盤：{curr_c:.2f} ({'▲' if price_diff >= 0 else '▼'}{abs(price_diff):.2f})</h2>
+                    <div style='background: #1E293B; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.15);'>
+                        <h2 style='color: #FFFFFF; margin: 0; font-size: 22px;'>{name} ({stock_id}) 今日收盤價：{curr_c:.2f} ({'▲' if price_diff >= 0 else '▼'}{abs(price_diff):.2f})</h2>
                     </div>
                 """, unsafe_allow_html=True)
 
-                # 看板 1：隔日可能觸及區間
-                st.markdown("### ⚡ 短線防守：隔日預期震盪範圍")
+                # 看板 1：隔日精準方向與戰術區間
+                st.markdown("### ⚡ 短線戰術：隔日預測方向與合理觸及區間")
+                
+                # 方向顯示大卡片
+                st.markdown(f"""
+                    <div style="background: #0F172A; padding: 20px; border-radius: 12px; border: 1px solid {direction_color}; margin-bottom: 15px;">
+                        <span style="font-size: 14px; color: #94A3B8; font-weight: bold;">🔮 AI 綜合量價籌碼判定隔日方向</span>
+                        <div style="font-size: 28px; font-weight: 800; color: {direction_color}; margin-top: 5px;">{pred_direction}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # 精準高低點數字卡片
                 cc1, cc2 = st.columns(2)
-                with cc1: st.markdown(f"<div style='background:#FFF5F5; padding:15px; border-radius:8px; text-align:center;'><span style='color:#C53030;'>📈 隔日預估可能最高觸及</span><h2>{final_next_high:.2f}</h2></div>", unsafe_allow_html=True)
-                with cc2: st.markdown(f"<div style='background:#F0FFF4; padding:15px; border-radius:8px; text-align:center;'><span style='color:#2F855A;'>📉 隔日預估可能最低觸及</span><h2>{final_next_low:.2f}</h2></div>", unsafe_allow_html=True)
+                with cc1: 
+                    st.markdown(f"""
+                        <div style='background: #111827; padding: 20px; border-radius: 12px; text-align: center; border-top: 5px solid #EF4444;'>
+                            <span style='color: #FCA5A5; font-size: 15px; font-weight: bold;'>📈 隔日預估【合理最高】上檔阻力點</span>
+                            <h1 style='color: #F87171; font-size: 45px; margin: 10px 0; font-weight: 900;'>{final_next_high:.2f}</h1>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with cc2: 
+                    st.markdown(f"""
+                        <div style='background: #111827; padding: 20px; border-radius: 12px; text-align: center; border-top: 5px solid #10B981;'>
+                            <span style='color: #A7F3D0; font-size: 15px; font-weight: bold;'>📉 隔日預估【合理最低】下檔支撐點</span>
+                            <h1 style='color: #34D399; font-size: 45px; margin: 10px 0; font-weight: 900;'>{final_next_low:.2f}</h1>
+                        </div>
+                    """, unsafe_allow_html=True)
 
                 # 看板 2：未來中長期波段目標
-                st.markdown("### 🔮 中長線波段：未來擴展目標價區間 (如 100 → 140~150 概念)")
+                st.markdown("### 🎯 中長線戰略：波段推算目標滿足區間")
                 st.markdown(f"""
                     <div style="background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%); padding: 25px; border-radius: 16px; color: white; box-shadow: 0 6px 15px rgba(0,0,0,0.15);">
-                        <div style="font-size: 48px; font-weight: 800; color: #F59E0B;">{final_target_min:.2f} <span style="font-size:22px; color:#93C5FD;">至</span> {final_target_max:.2f}</div>
-                        <div style="font-size: 14px; margin-top: 10px; color:#E2E8F0;">🎯 趨勢狀態：{trend_status}</div>
+                        <span style="font-size: 14px; color: #93C5FD; font-weight: bold;">🎯 中線未來滿足點估算範圍</span>
+                        <div style="font-size: 52px; font-weight: 900; color: #F59E0B; margin: 10px 0;">{final_target_min:.2f} <span style="font-size:24px; color:#93C5FD; font-weight: 300;">至</span> {final_target_max:.2f}</div>
+                        <div style="font-size: 14px; color:#E2E8F0;">📈 趨勢大結構：{trend_status}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
                 # 每日紀律存檔按鈕
                 st.divider()
                 st.markdown("### 💾 執行每日紀律預測存檔")
-                if st.button("📥 記錄今日預測資料（納入勝率計算）", use_container_width=True):
-                    save_prediction(stock_id, name, curr_c, final_next_low, final_next_high)
-                    st.success(f"🎉 成功存檔！已將 {name} 今日預測範圍記錄至資料庫。")
+                if st.button("📥 記錄今日預測與方向（納入勝率計算）", use_container_width=True):
+                    save_prediction(stock_id, name, curr_c, pred_direction, final_next_low, final_next_high)
+                    st.success(f"🎉 成功存檔！已將 {name} 今日預測範圍與方向紀錄至歷史資料庫中。")
 
                 # 繪圖
                 st.divider()
@@ -365,14 +431,16 @@ elif st.session_state.mode == "backtest":
         else:
             st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #1E1B4B 0%, #431407 100%); padding: 25px; border-radius: 16px; color: white; margin-bottom: 25px;">
-                    <span style="font-size: 14px; color: #FED7AA; font-weight: bold;">📊 AI 模型實戰真實勝率 (隔日觸及成功率)</span>
+                    <span style="font-size: 14px; color: #FED7AA; font-weight: bold;">📊 AI 模型實戰真實勝率 (隔日精準區間觸及率)</span>
                     <div style="font-size: 60px; font-weight: 900; color: #F97316;">{total_acc:.1f}%</div>
                 </div>
             """, unsafe_allow_html=True)
             
             df_display = df_db.copy().sort_values(by="prediction_date", ascending=False)
-            df_display.columns = ["預測日期", "股票代碼", "股票名稱", "預測基準價", "預估隔日最低", "預估隔日最高", "實際隔日最低", "實際隔日最高", "開獎結果"]
+            df_display.columns = ["預測日期", "股票代碼", "股票名稱", "預測基準價", "預判隔日方向", "預估隔日最低", "預估隔日最高", "實際隔日最低", "實際隔日最高", "開獎結果"]
             st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+# --- ...（其餘類群輪動 sector 與拯救套牢 rescue 程式碼皆保留不變，與上一版本一致）...
 
 # --- 【SECTOR：類群輪動預警頁面】 ---
 elif st.session_state.mode == "sector":
