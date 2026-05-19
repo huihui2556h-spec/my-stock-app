@@ -27,11 +27,11 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
     from datetime import datetime, timedelta
   
     # 預設回傳
-    default_res = (1.0, 0.0, 0.0, 0.0, 0.0, "API 維護中")
-    pure_id = str(stock_id).split('.')[0]
+    default_res = (1.0, 0.0, 0.0, 0.0, 0.0, "API 維護中")
+    pure_id = str(stock_id).split('.')[0]
     
     # 嘗試兩種 ID 格式 (上櫃股票有時需要不同後綴)
-    id_variants = [pure_id, f"{pure_id}.TW"]
+    id_variants = [pure_id, f"{pure_id}.TW"]
     
     for target_id in id_variants:
         try:
