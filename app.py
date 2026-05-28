@@ -394,22 +394,58 @@ elif st.session_state.mode == "forecast":
                     st.success(f"🎉 成功存檔！已將 {name} 今日預測範圍與方向紀錄至歷史資料庫中。")
 
                 st.divider()
-                st.subheader("📈 技術指標與趨勢波浪軌道追蹤 (全英註解防崩潰)")
+                st.subheader("📈 AI 技術指標與趨勢波浪軌道追蹤")
+                
+                # ------【關鍵修復：動態載入中文字體，防止跨平台崩潰】------
+                import matplotlib.font_manager as fm
+                
+                # 定義字體下載路徑與 URL（使用思源黑體，確保繁體中文完美呈現）
+                font_path = "NotoSansTC-Regular.ttf"
+                if not os.path.exists(font_path):
+                    with st.spinner('首次載入圖表，正在動態配置繁體中文環境...'):
+                        try:
+                            font_url = "https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf"
+                            font_res = requests.get(font_url, timeout=10)
+                            if font_res.status_code == 200:
+                                with open(font_path, "wb") as f:
+                                    f.write(font_res.content)
+                        except Exception as e:
+                            st.warning(f"字體自動下載失敗，圖表將改用系統預設字體。錯誤: {e}")
+                
+                # 如果字體檔案存在，就註冊並應用到 matplotlib
+                if os.path.exists(font_path):
+                    try:
+                        font_prop = fm.FontProperties(fname=font_path)
+                        fm.fontManager.addfont(font_path)
+                        matplotlib.rc('font', family='Noto Sans TC')
+                    except:
+                        pass
+                # ----------------------------------------------------
+
                 plot_df = df.tail(100)
                 fig, ax = plt.subplots(figsize=(11, 4.5))
                 
-                ax.plot(plot_df.index, plot_df['Close'], label='Close Price', color='#1E293B', linewidth=2)
-                ax.plot(plot_df.index, plot_df['BB_MA'], label='BB Middle (20 MA)', color='#3B82F6', linestyle='--')
-                ax.plot(plot_df.index, plot_df['BB_Upper'], label='BB Upper (2 Std)', color='#EF4444', alpha=0.6)
-                ax.plot(plot_df.index, plot_df['BB_Lower'], label='BB Lower (2 Std)', color='#10B981', alpha=0.6)
+                # 1. 繪製價格與通道線（改成純繁體中文標籤）
+                ax.plot(plot_df.index, plot_df['Close'], label='今日收盤價現況現', color='#1E293B', linewidth=2)
+                ax.plot(plot_df.index, plot_df['BB_MA'], label='布林中軌 (20 MA)', color='#3B82F6', linestyle='--')
+                ax.plot(plot_df.index, plot_df['BB_Upper'], label='布林上軌 (+2 Std) 超買壓力', color='#EF4444', alpha=0.6)
+                ax.plot(plot_df.index, plot_df['BB_Lower'], label='布林下軌 (-2 Std) 超賣支撐', color='#10B981', alpha=0.6)
                 
-                ax.scatter(p_min_idx, wave_low, color='#10B981', s=120, marker='^', label='100D Wave Low Base')
-                ax.scatter(p_max_idx, wave_high, color='#EF4444', s=120, marker='v', label='100D Wave High Peak')
-                ax.plot([p_min_idx, p_max_idx], [wave_low, wave_high], color='#F59E0B', linestyle=':', linewidth=2, label='Wave Vector')
+                # 2. 繪製近百日 Elliott 波段高低點與向量（改成純繁體中文標籤）
+                ax.scatter(p_min_idx, wave_low, color='#10B981', s=120, marker='^', label='100日波段最低築底點')
+                ax.scatter(p_max_idx, wave_high, color='#EF4444', s=120, marker='v', label='100日波段最高頂點')
+                ax.plot([p_min_idx, p_max_idx], [wave_low, wave_high], color='#F59E0B', linestyle=':', linewidth=2, label='多空轉換結構向量')
                 
-                ax.set_title(f"{stock_id} Bollinger Bands & Elliott Wave Dashboard", fontsize=10, fontweight='bold')
-                ax.legend(loc='upper left', fontsize=8)
+                # 3. 繁體中文標題、圖例與軸標籤設定
+                ax.set_title(f"{name} ({stock_id}) 布林通道與艾略特波浪軌道儀表板", fontsize=12, fontweight='bold')
+                ax.set_xlabel("日期 (Date)", fontsize=9)
+                ax.set_ylabel("價格 (Price)", fontsize=9)
+                
+                # 設定圖例（若載入成功則套用中文，並配置高 scannability 視覺）
+                ax.legend(loc='upper left', fontsize=8, framealpha=0.8)
                 ax.grid(True, linestyle=':', alpha=0.5)
+                
+                # 渲染到 Streamlit 網頁
                 st.pyplot(fig)
             else:
                 st.error("❌ 無法取得該股票歷史資料。")
