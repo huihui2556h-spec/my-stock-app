@@ -10,7 +10,8 @@ from datetime import datetime, time, timedelta
 import pytz
 import matplotlib.pyplot as plt
 import matplotlib
-
+from github import Github
+import io
 # --- [全域初始化與網頁設定] ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 st.set_page_config(page_title="台股 AI 交易助手 Pro - 修正穩定版", layout="wide", page_icon="💹")
