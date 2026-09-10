@@ -6,12 +6,13 @@ import requests
 import re
 import urllib3
 import os
+import io
 from datetime import datetime, time, timedelta
 import pytz
 import matplotlib.pyplot as plt
 import matplotlib
 from github import Github
-import io
+
 # --- [全域初始化與網頁設定] ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 st.set_page_config(page_title="台股 AI 交易助手 Pro - 修正穩定版", layout="wide", page_icon="💹")
@@ -22,8 +23,8 @@ tw_tz = pytz.timezone("Asia/Taipei")
 # --- [圖表全英設定：防止因中文字體缺失導致圖例註解不見] ---
 matplotlib.rcParams['axes.unicode_minus'] = False 
 
-# 預測紀錄檔路徑
-DB_FILE = "prediction_history.csv"
+# GitHub 預測紀錄檔路徑
+GITHUB_FILE_PATH = "prediction_history.csv"
 
 # --- [全域變數與金鑰] ---
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMy0wNSAxODozOToxOSIsInVzZXJfaWQiOiJhYXJvbjA3IiwiZW1haWwiOiJodWlodWkyNTU2aEBnbWFpbC5jb20iLCJpcCI6IjEuMTcwLjkwLjIyNSJ9.n-uv7ODTCIAjl0mffN2_rsIvqwLRWB3rVFCBd7jG0bE"
@@ -97,7 +98,7 @@ def fetch_stock_data(stock_id, period="150d"):
     return pd.DataFrame(), None
 
 def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
-    """抓取三大法人籌碼，用來輔助預測隔日多空方向"""
+    """抓取三大法人籌碼，用來輔助預測隔日多空方向 (已加入例外處理)"""
     pure_id = str(stock_id).split('.')[0]
     try:
         url = "https://api.finmindtrade.com/api/v4/data"
@@ -115,11 +116,38 @@ def fetch_finmind_chips(stock_id, token=FINMIND_TOKEN):
                     r = today_df[today_df[col].str.contains(k, case=False, na=False)]
                     return (r['buy'].sum() - r['sell'].sum()) / 1000 if not r.empty else 0.0
                 return get_v('Foreign') + get_v('Trust') + get_v('Dealer')
-    except:
-        pass
+    except Exception as e:
+        st.warning(f"⚠️ 籌碼數據讀取異常: {e}")
     return 0.0
 
-# --- [歷史預測資料庫核心邏輯] ---
+# --- [GitHub 資料庫核心邏輯] ---
+def get_github_repo():
+    """初始化並獲取 GitHub Repo 物件"""
+    g = Github(st.secrets["GITHUB_TOKEN"])
+    repo = g.get_repo(st.secrets["GITHUB_REPO"])
+    return repo
+
+def load_data_from_github():
+    """從 GitHub 讀取 CSV 並轉為 DataFrame"""
+    try:
+        repo = get_github_repo()
+        contents = repo.get_contents(GITHUB_FILE_PATH)
+        decoded_content = contents.decoded_content.decode('utf-8-sig')
+        return pd.read_csv(io.StringIO(decoded_content)), contents.sha
+    except Exception as e:
+        # 如果找不到檔案 (404)，回傳空的 DataFrame 與 None 的 SHA
+        return pd.DataFrame(), None
+
+def save_data_to_github(df, sha, commit_message="Update prediction history"):
+    """將 DataFrame 推送回 GitHub"""
+    repo = get_github_repo()
+    csv_content = df.to_csv(index=False, encoding="utf-8-sig")
+    
+    if sha:
+        repo.update_file(GITHUB_FILE_PATH, commit_message, csv_content, sha)
+    else:
+        repo.create_file(GITHUB_FILE_PATH, commit_message, csv_content)
+
 def save_prediction(stock_id, stock_name, current_price, pred_direction, pred_low, pred_high):
     today_str = datetime.now(tw_tz).strftime("%Y-%m-%d")
     new_data = pd.DataFrame([{
@@ -135,24 +163,24 @@ def save_prediction(stock_id, stock_name, current_price, pred_direction, pred_lo
         "is_hit": "Pending"
     }])
     
-    if os.path.exists(DB_FILE):
-        try:
-            df_db = pd.read_csv(DB_FILE)
-            df_db = df_db[~((df_db['prediction_date'] == today_str) & (df_db['stock_id'] == stock_id))]
-            df_db = pd.concat([df_db, new_data], ignore_index=True)
-        except:
-            df_db = new_data
+    # 從 GitHub 載入歷史資料
+    df_db, sha = load_data_from_github()
+    
+    if not df_db.empty:
+        # 覆蓋今日重複預測的標的
+        df_db = df_db[~((df_db['prediction_date'] == today_str) & (df_db['stock_id'] == stock_id))]
+        df_db = pd.concat([df_db, new_data], ignore_index=True)
     else:
         df_db = new_data
         
-    df_db.to_csv(DB_FILE, index=False, encoding="utf-8-sig")
+    # 推送回 GitHub
+    save_data_to_github(df_db, sha, f"AI交易助手: 新增預測 {stock_id}")
 
 def update_and_calculate_accuracy():
-    if not os.path.exists(DB_FILE):
-        return pd.DataFrame(), 0.0
-    try:
-        df_db = pd.read_csv(DB_FILE)
-    except:
+    # 從 GitHub 載入歷史資料
+    df_db, sha = load_data_from_github()
+    
+    if df_db.empty:
         return pd.DataFrame(), 0.0
         
     updated = False
@@ -169,7 +197,6 @@ def update_and_calculate_accuracy():
                         df_db.at[idx, 'actual_next_low'] = round(act_low, 2)
                         df_db.at[idx, 'actual_next_high'] = round(act_high, 2)
                         
-                        # 歷史命中回測定義：實際回測數據比對
                         if (act_high >= row['pred_next_low']) and (act_low <= row['pred_next_high']):
                             df_db.at[idx, 'is_hit'] = "Hit (成功)"
                         else:
@@ -177,11 +204,13 @@ def update_and_calculate_accuracy():
                         updated = True
                         
     if updated:
-        df_db.to_csv(DB_FILE, index=False, encoding="utf-8-sig")
+        # 只要有更新回測結果，就推送回 GitHub
+        save_data_to_github(df_db, sha, "AI交易助手: 系統自動更新開獎結果與勝率")
         
     hit_rows = df_db[df_db['is_hit'] == "Hit (成功)"]
     closed_rows = df_db[df_db['is_hit'].isin(["Hit (成功)", "Miss (未命中)"])]
     accuracy = (len(hit_rows) / len(closed_rows) * 100) if not closed_rows.empty else 0.0
+    
     return df_db, accuracy
 
 # --- [Session State 初始化] ---
@@ -292,9 +321,9 @@ elif st.session_state.mode == "forecast":
                 active_color = "#EF4444" if price_diff >= 0 else "#10B981"
                 tick = get_tick_size(curr_c)
                 
-                # ------【核心升級 1：隔日多空方向預判邏輯】------
-                chip_flow = fetch_finmind_chips(stock_id) # 引入 FinMind 籌碼
-                k_momentum = curr_c - df['Close'].shift(3).iloc[-1] # 近3日價格動量
+                # ------【隔日多空方向預判邏輯】------
+                chip_flow = fetch_finmind_chips(stock_id)
+                k_momentum = curr_c - df['Close'].shift(3).iloc[-1]
                 
                 if k_momentum > 0 and chip_flow >= 0:
                     pred_direction = "📈 隔日看漲 (動能增強，法人籌碼偏多)"
@@ -309,11 +338,9 @@ elif st.session_state.mode == "forecast":
                     direction_color = "#A78BFA"
                     center_price = curr_c
 
-                # ------【核心升級 2：縮減至 1日合理交易標準差範圍】------
+                # ------【縮減至 1日合理交易標準差範圍】------
                 df['Return'] = np.log(df['Close'] / df['Close'].shift(1))
                 daily_std_pct = df['Return'].tail(20).std()
-                
-                # 使用 1 日震盪標準差
                 expected_range = curr_c * daily_std_pct * 1.0 
                 
                 final_next_low = round((center_price - expected_range) / tick) * tick
@@ -322,7 +349,7 @@ elif st.session_state.mode == "forecast":
                 if final_next_low >= curr_c: final_next_low = curr_c - tick
                 if final_next_high <= curr_c: final_next_high = curr_c + tick
 
-                # ------【3. 中長期波段目標價 (黃金分割擴展模型)】------
+                # ------【中長期波段目標價 (黃金分割擴展模型)】------
                 df['BB_MA'] = df['Close'].rolling(window=20).mean()
                 df['BB_STD'] = df['Close'].rolling(window=20).std()
                 df['BB_Upper'] = df['BB_MA'] + (2 * df['BB_STD'])
@@ -347,7 +374,7 @@ elif st.session_state.mode == "forecast":
                 final_target_min = round(target_low / tick) * tick
                 final_target_max = round(target_high / tick) * tick
 
-                # --- 介面呈現 (高對比深色漸層背景，字體 100% 清晰) ---
+                # --- 介面呈現 ---
                 st.markdown(f"""
                     <div style='background: #1E293B; padding: 20px; border-radius: 15px; border-left: 10px solid {active_color}; box-shadow: 0 4px 6px rgba(0,0,0,0.15);'>
                         <h2 style='color: #FFFFFF; margin: 0; font-size: 22px;'>{name} ({stock_id}) 今日收盤價：{curr_c:.2f} ({'▲' if price_diff >= 0 else '▼'}{abs(price_diff):.2f})</h2>
@@ -391,16 +418,15 @@ elif st.session_state.mode == "forecast":
                 st.divider()
                 st.markdown("### 💾 執行每日紀律預測存檔")
                 if st.button("📥 記錄今日預測與方向（納入勝率計算）", use_container_width=True):
-                    save_prediction(stock_id, name, curr_c, pred_direction, final_next_low, final_next_high)
-                    st.success(f"🎉 成功存檔！已將 {name} 今日預測範圍與方向紀錄至歷史資料庫中。")
+                    with st.spinner('連線 GitHub 數據庫同步寫入中...'):
+                        save_prediction(stock_id, name, curr_c, pred_direction, final_next_low, final_next_high)
+                    st.success(f"🎉 成功存檔！已將 {name} 今日預測範圍與方向同步至 GitHub 儲存庫中。")
 
                 st.divider()
                 st.subheader("📈 AI 技術指標與趨勢波浪軌道追蹤")
                 
-                # ------【關鍵修復：動態載入中文字體，防止跨平台崩潰】------
+                # 動態載入中文字體
                 import matplotlib.font_manager as fm
-                
-                # 定義字體下載路徑與 URL（使用思源黑體，確保繁體中文完美呈現）
                 font_path = "NotoSansTC-Regular.ttf"
                 if not os.path.exists(font_path):
                     with st.spinner('首次載入圖表，正在動態配置繁體中文環境...'):
@@ -413,7 +439,6 @@ elif st.session_state.mode == "forecast":
                         except Exception as e:
                             st.warning(f"字體自動下載失敗，圖表將改用系統預設字體。錯誤: {e}")
                 
-                # 如果字體檔案存在，就註冊並應用到 matplotlib
                 if os.path.exists(font_path):
                     try:
                         font_prop = fm.FontProperties(fname=font_path)
@@ -421,32 +446,26 @@ elif st.session_state.mode == "forecast":
                         matplotlib.rc('font', family='Noto Sans TC')
                     except:
                         pass
-                # ----------------------------------------------------
 
                 plot_df = df.tail(100)
                 fig, ax = plt.subplots(figsize=(11, 4.5))
                 
-                # 1. 繪製價格與通道線（改成純繁體中文標籤）
-                ax.plot(plot_df.index, plot_df['Close'], label='今日收盤價現況現', color='#1E293B', linewidth=2)
+                ax.plot(plot_df.index, plot_df['Close'], label='今日收盤價現況', color='#1E293B', linewidth=2)
                 ax.plot(plot_df.index, plot_df['BB_MA'], label='布林中軌 (20 MA)', color='#3B82F6', linestyle='--')
                 ax.plot(plot_df.index, plot_df['BB_Upper'], label='布林上軌 (+2 Std) 超買壓力', color='#EF4444', alpha=0.6)
                 ax.plot(plot_df.index, plot_df['BB_Lower'], label='布林下軌 (-2 Std) 超賣支撐', color='#10B981', alpha=0.6)
                 
-                # 2. 繪製近百日 Elliott 波段高低點與向量（改成純繁體中文標籤）
                 ax.scatter(p_min_idx, wave_low, color='#10B981', s=120, marker='^', label='100日波段最低築底點')
                 ax.scatter(p_max_idx, wave_high, color='#EF4444', s=120, marker='v', label='100日波段最高頂點')
                 ax.plot([p_min_idx, p_max_idx], [wave_low, wave_high], color='#F59E0B', linestyle=':', linewidth=2, label='多空轉換結構向量')
                 
-                # 3. 繁體中文標題、圖例與軸標籤設定
                 ax.set_title(f"{name} ({stock_id}) 布林通道與艾略特波浪軌道儀表板", fontsize=12, fontweight='bold')
                 ax.set_xlabel("日期 (Date)", fontsize=9)
                 ax.set_ylabel("價格 (Price)", fontsize=9)
                 
-                # 設定圖例（若載入成功則套用中文，並配置高 scannability 視覺）
                 ax.legend(loc='upper left', fontsize=8, framealpha=0.8)
                 ax.grid(True, linestyle=':', alpha=0.5)
                 
-                # 渲染到 Streamlit 網頁
                 st.pyplot(fig)
             else:
                 st.error("❌ 無法取得該股票歷史資料。")
@@ -456,7 +475,7 @@ elif st.session_state.mode == "backtest":
     if st.button("⬅️ 返回首頁"): st.session_state.mode = "home"; st.rerun()
     st.title("📊 每日預測紀律與真實準確率回測中心")
     
-    with st.spinner('正在對齊歷史數據並更新勝率...'):
+    with st.spinner('連線 GitHub 數據庫對齊歷史數據並更新勝率...'):
         df_db, total_acc = update_and_calculate_accuracy()
         if df_db.empty:
             st.warning("📭 目前無歷史預測紀錄！請先至「隔日區間預估」儲存您的觀察標的。")
@@ -468,7 +487,6 @@ elif st.session_state.mode == "backtest":
                 </div>
             """, unsafe_allow_html=True)
             
-            # 【關鍵修復點】：改用字典 mapping（.rename）方式安全地改欄位名，完美避開數量不對稱噴錯誤的問題！
             df_display = df_db.copy().sort_values(by="prediction_date", ascending=False)
             
             rename_dict = {
@@ -487,7 +505,21 @@ elif st.session_state.mode == "backtest":
             df_display = df_display.rename(columns=rename_dict)
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-# --- 【SECTOR：類群輪動預警頁面 (完整保留)】 ---
+            # ====== [新增匯出功能區塊] ======
+            st.divider()
+            st.markdown("### 💾 匯出歷史預測資料")
+            
+            csv_data = df_display.to_csv(index=False, encoding='utf-8-sig')
+            
+            st.download_button(
+                label="📥 下載完整預測歷史紀錄 (CSV格式)",
+                data=csv_data,
+                file_name=f"AI交易助手_預測紀錄_{datetime.now(tw_tz).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+# --- 【SECTOR：類群輪動預警頁面】 ---
 elif st.session_state.mode == "sector":
     st.title("💎 類群輪動大戶預警儀表板")
     if st.button("⬅️ 返回首頁"): st.session_state.mode = "home"; st.rerun()
@@ -534,7 +566,7 @@ elif st.session_state.mode == "sector":
             df_display.columns = ['ID', '漲跌幅百分比', '大戶資金流入比率', '細分產業名稱']
             st.dataframe(df_display[['細分產業名稱', '漲跌幅百分比', '大戶資金流入比率']].sort_values(by='大戶資金流入比率', ascending=False), use_container_width=True, hide_index=True)
 
-# --- 【RESCUE：拯救套牢診斷頁面 (完整保留)】 ---
+# --- 【RESCUE：拯救套牢診斷頁面】 ---
 elif st.session_state.mode == "rescue":
     st.title("🆘 拯救套牢診斷艙")
     if st.button("⬅️ 返回首頁"): st.session_state.mode = "home"; st.rerun()
