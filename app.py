@@ -284,21 +284,58 @@ def update_and_calculate_accuracy():
                 if not hist_df.empty:
                     post_df = hist_df[hist_df.index > pd.to_datetime(row['prediction_date'])]
                     if not post_df.empty:
+                        # 取得實際隔日的高、低、收盤價
                         act_low = float(post_df['Low'].iloc[0])
                         act_high = float(post_df['High'].iloc[0])
+                        act_close = float(post_df['Close'].iloc[0])
+                        base_price = float(row['base_price']) # 預測當天的收盤價(基準價)
+                        
                         df_db.at[idx, 'actual_next_low'] = round(act_low, 2)
                         df_db.at[idx, 'actual_next_high'] = round(act_high, 2)
                         
-                        if (act_high >= row['pred_next_low']) and (act_low <= row['pred_next_high']):
-                            df_db.at[idx, 'is_hit'] = "Hit (成功)"
+                        # --- [新增：嚴格方向判定邏輯] ---
+                        pred_dir_str = row['pred_direction']
+                        
+                        # 1. 判斷隔日「實際」漲跌方向
+                        if act_close > base_price:
+                            actual_dir = "UP"
+                        elif act_close < base_price:
+                            actual_dir = "DOWN"
                         else:
+                            actual_dir = "FLAT"
+                            
+                        # 2. 判斷系統「預估」漲跌方向
+                        if "看漲" in pred_dir_str:
+                            pred_dir = "UP"
+                        elif "看跌" in pred_dir_str:
+                            pred_dir = "DOWN"
+                        else:
+                            pred_dir = "FLAT" # 震盪盤整
+                            
+                        # 3. 判斷方向是否吻合
+                        # 若預測為「震盪(FLAT)」，則不強制要求明確單一方向，直接進入區間判斷
+                        direction_match = False
+                        if pred_dir == actual_dir:
+                            direction_match = True
+                        elif pred_dir == "FLAT":
+                            direction_match = True
+                        
+                        # 4. 最終開獎結果判定
+                        if direction_match:
+                            # 條件一吻合(方向對)：接著檢查條件二(實際高低點是否有碰觸預估區間)
+                            if (act_high >= row['pred_next_low']) and (act_low <= row['pred_next_high']):
+                                df_db.at[idx, 'is_hit'] = "Hit (成功)"
+                            else:
+                                df_db.at[idx, 'is_hit'] = "Miss (未命中)"
+                        else:
+                            # 條件一失敗(方向錯)：就算盤中高低點有摸到區間，也直接判定未命中
                             df_db.at[idx, 'is_hit'] = "Miss (未命中)"
                         
                         updated = True
 
     if updated:
         # 只要有更新回測結果，就推送回 GitHub
-        save_data_to_github(df_db, sha, "AI交易助手: 系統自動更新開獎結果與勝率")
+        save_data_to_github(df_db, sha, "AI交易助手: 系統自動更新開獎結果(加入嚴格方向判定)")
 
     hit_rows = df_db[df_db['is_hit'] == "Hit (成功)"]
     closed_rows = df_db[df_db['is_hit'].isin(["Hit (成功)", "Miss (未命中)"])]
