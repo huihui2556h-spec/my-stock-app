@@ -269,15 +269,23 @@ def save_prediction(stock_id, stock_name, current_price, pred_direction, pred_lo
     # 推送回 GitHub
     save_data_to_github(df_db, sha, f"AI交易助手: 新增預測 {stock_id}")
 
+
+# =============== [本次重點修復區塊] ===============
 def update_and_calculate_accuracy():
     # 從 GitHub 載入歷史資料
     df_db, sha = load_data_from_github()
     if df_db.empty:
         return pd.DataFrame(), 0.0
 
+    # 1️⃣ [關鍵修復] 確保舊資料庫擁有 'actual_direction' 欄位，若沒有則補上並填入 NaN
+    if 'actual_direction' not in df_db.columns:
+        df_db['actual_direction'] = np.nan
+
     updated = False
     for idx, row in df_db.iterrows():
-        if row['is_hit'] == "Pending" or pd.isna(row['actual_next_low']):
+        # 2️⃣ [關鍵修復] 更新觸發條件：
+        # 除了 Pending 和沒低價的紀錄外，如果發現「實際方向(actual_direction)」是空的，也強制重新比對！
+        if row['is_hit'] == "Pending" or pd.isna(row['actual_next_low']) or pd.isna(row['actual_direction']):
             pred_dt = datetime.strptime(row['prediction_date'], "%Y-%m-%d")
             
             if pred_dt.date() < datetime.now(tw_tz).date():
@@ -320,7 +328,6 @@ def update_and_calculate_accuracy():
                             pred_dir = "FLAT" # 震盪盤整
                             
                         # 3. 判斷方向是否吻合
-                        # 若預測為「震盪(FLAT)」，則不強制要求明確單一方向，直接進入區間判斷
                         direction_match = False
                         if pred_dir == actual_dir:
                             direction_match = True
@@ -329,25 +336,24 @@ def update_and_calculate_accuracy():
                         
                         # 4. 最終開獎結果判定
                         if direction_match:
-                            # 條件一吻合(方向對)：接著檢查條件二(實際高低點是否有碰觸預估區間)
                             if (act_high >= row['pred_next_low']) and (act_low <= row['pred_next_high']):
                                 df_db.at[idx, 'is_hit'] = "Hit (成功)"
                             else:
                                 df_db.at[idx, 'is_hit'] = "Miss (未命中)"
                         else:
-                            # 條件一失敗(方向錯)：就算盤中高低點有摸到區間，也直接判定未命中
                             df_db.at[idx, 'is_hit'] = "Miss (未命中)"
                         
                         updated = True
 
     if updated:
-        # 只要有更新回測結果，就推送回 GitHub
-        save_data_to_github(df_db, sha, "AI交易助手: 系統自動更新開獎結果(加入嚴格方向判定)")
+        # 只要有更新回測結果(包含歷史資料回補)，就推送回 GitHub
+        save_data_to_github(df_db, sha, "AI交易助手: 系統自動更新開獎結果與歷史方向回補")
 
     hit_rows = df_db[df_db['is_hit'] == "Hit (成功)"]
     closed_rows = df_db[df_db['is_hit'].isin(["Hit (成功)", "Miss (未命中)"])]
     accuracy = (len(hit_rows) / len(closed_rows) * 100) if not closed_rows.empty else 0.0
     return df_db, accuracy
+# =========================================================
 
 
 # --- [Session State 初始化] ---
@@ -635,7 +641,7 @@ elif st.session_state.mode == "backtest":
 
         df_display = df_db.copy().sort_values(by="prediction_date", ascending=False)
         
-        # [修改] 新增 "actual_direction": "實際隔日方向" 對應
+        # 新增 "actual_direction": "實際隔日方向" 對應
         rename_dict = {
             "prediction_date": "預測日期",
             "stock_id": "股票代碼",
@@ -651,7 +657,7 @@ elif st.session_state.mode == "backtest":
         }
         df_display = df_display.rename(columns=rename_dict)
         
-        # [新增] 嚴格定義顯示的欄位順序 (確保實際方向在倒數第四欄位)
+        # 嚴格定義顯示的欄位順序 (確保實際方向在倒數第四欄位)
         cols_order = [
             "預測日期", "股票代碼", "股票名稱", "預測基準價", 
             "預判隔日方向", "預估隔日最低", "預估隔日最高", 
@@ -786,7 +792,7 @@ elif st.session_state.mode == "rescue":
             
             support_p = df['Low'].tail(20).min()
             resistance_p = df['High'].tail(20).max()
-            st.markdown(f"> **⚠️ 技術面提示**：近20日低點支撐位 <b style='color:#28A745;'>{support_p:.2f}</b> ｜ 近20日高點壓力位 <b style='color:#DC3545;'>{resistance_p:.2f}</b>", unsafe_allow_html=True)
+            st.markdown(f"> **⚠️️ 技術面提示**：近20日低點支撐位 <b style='color:#28A745;'>{support_p:.2f}</b> ｜ 近20日高點壓力位 <b style='color:#DC3545;'>{resistance_p:.2f}</b>", unsafe_allow_html=True)
 
             st.divider()
             add_shares = st.slider("預計加碼買進張數 (張)：", min_value=1, max_value=r_volume*3, value=r_volume)
