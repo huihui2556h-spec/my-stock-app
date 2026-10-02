@@ -250,6 +250,7 @@ def save_prediction(stock_id, stock_name, current_price, pred_direction, pred_lo
         "pred_direction": pred_direction,
         "pred_next_low": round(pred_low, 2),
         "pred_next_high": round(pred_high, 2),
+        "actual_direction": np.nan,  # [新增] 紀錄隔日的真實收盤方向
         "actual_next_low": np.nan,
         "actual_next_high": np.nan,
         "is_hit": "Pending"
@@ -293,16 +294,22 @@ def update_and_calculate_accuracy():
                         df_db.at[idx, 'actual_next_low'] = round(act_low, 2)
                         df_db.at[idx, 'actual_next_high'] = round(act_high, 2)
                         
-                        # --- [新增：嚴格方向判定邏輯] ---
+                        # --- [嚴格方向判定邏輯] ---
                         pred_dir_str = row['pred_direction']
                         
                         # 1. 判斷隔日「實際」漲跌方向
                         if act_close > base_price:
                             actual_dir = "UP"
+                            act_dir_display = "📈 上漲"
                         elif act_close < base_price:
                             actual_dir = "DOWN"
+                            act_dir_display = "📉 下跌"
                         else:
                             actual_dir = "FLAT"
+                            act_dir_display = "⏳ 平盤"
+                            
+                        # [新增] 寫入實際方向至資料庫欄位
+                        df_db.at[idx, 'actual_direction'] = act_dir_display
                             
                         # 2. 判斷系統「預估」漲跌方向
                         if "看漲" in pred_dir_str:
@@ -627,6 +634,8 @@ elif st.session_state.mode == "backtest":
         """, unsafe_allow_html=True)
 
         df_display = df_db.copy().sort_values(by="prediction_date", ascending=False)
+        
+        # [修改] 新增 "actual_direction": "實際隔日方向" 對應
         rename_dict = {
             "prediction_date": "預測日期",
             "stock_id": "股票代碼",
@@ -635,17 +644,29 @@ elif st.session_state.mode == "backtest":
             "pred_direction": "預判隔日方向",
             "pred_next_low": "預估隔日最低",
             "pred_next_high": "預估隔日最高",
+            "actual_direction": "實際隔日方向",
             "actual_next_low": "實際隔日最低",
             "actual_next_high": "實際隔日最高",
             "is_hit": "開獎結果"
         }
         df_display = df_display.rename(columns=rename_dict)
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        
+        # [新增] 嚴格定義顯示的欄位順序 (確保實際方向在倒數第四欄位)
+        cols_order = [
+            "預測日期", "股票代碼", "股票名稱", "預測基準價", 
+            "預判隔日方向", "預估隔日最低", "預估隔日最高", 
+            "實際隔日方向", "實際隔日最低", "實際隔日最高", "開獎結果"
+        ]
+        
+        # 濾出存在的欄位以防舊資料缺少某些欄位導致報錯
+        display_cols = [c for c in cols_order if c in df_display.columns]
+        
+        st.dataframe(df_display[display_cols], use_container_width=True, hide_index=True)
 
         # ====== [新增匯出功能區塊] ======
         st.divider()
         st.markdown("### 💾 匯出歷史預測資料")
-        csv_data = df_display.to_csv(index=False, encoding='utf-8-sig')
+        csv_data = df_display[display_cols].to_csv(index=False, encoding='utf-8-sig')
         st.download_button(
             label="📥 下載完整預測歷史紀錄 (CSV格式)",
             data=csv_data,
